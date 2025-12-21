@@ -1,6 +1,44 @@
+# Build outputs
 build/bin
+*.exe
+*.dll
+
+# Dependencies
 node_modules
+deps
+
+# Frontend
 frontend/dist
 frontend/wailsjs
-deps
-config
+
+# MAA Framework
+lib/
+logs/
+*.log
+
+# Configuration
+config/
+
+# Development
+*.tmp
+*.swp
+*~
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+# (go.sum should be tracked for reproducible builds)
+
+# Downloads and archives
+*.zip
+*.tar.gz
+*.rar
+
+# Reference projects and code
+reference/
+
+# Excel files
+*.xlsm
