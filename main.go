@@ -22,6 +22,7 @@ var assets embed.FS
 
 func main() {
 	// Initialize services
+	app := NewApp()
 	taskSrv := task.Task()
 	appConfSrv := appconf.AppConf()
 	engSrv := engine.Engine()
@@ -52,15 +53,17 @@ func main() {
 			Assets:  assets,
 			Handler: mux,
 		},
-		Frameless:        true,
+		Frameless:        false,
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup: func(ctx context.Context) {
+			app.Startup(ctx)
 			task.Startup(ctx)
 			appconf.Startup(ctx)
 			engine.Startup(ctx)
 			system.Startup(ctx)
 		},
 		Bind: []interface{}{
+			app,
 			taskSrv,
 			appConfSrv,
 			engSrv,

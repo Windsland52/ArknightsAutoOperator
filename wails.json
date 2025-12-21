@@ -2,10 +2,10 @@
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "arknights-auto-operator",
   "outputfilename": "arknights-auto-operator",
-  "frontend:install": "echo 'No frontend yet'",
-  "frontend:build": "echo 'No frontend yet'",
-  "frontend:dev:watcher": "echo 'No frontend yet'",
-  "frontend:dev:serverUrl": "auto",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "http://localhost:34115",
   "author": {
     "name": "ArknightsAutoOperator",
     "email": "winds_land@foxmail.com"
