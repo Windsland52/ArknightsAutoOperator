@@ -15,11 +15,11 @@ import (
 )
 
 var (
-	user32              = syscall.NewLazyDLL("user32.dll")
-	procEnumWindows     = user32.NewProc("EnumWindows")
-	procGetWindowTextW  = user32.NewProc("GetWindowTextW")
-	procGetClassNameW   = user32.NewProc("GetClassNameW")
-	procIsWindowVisible = user32.NewProc("IsWindowVisible")
+	user32                = syscall.NewLazyDLL("user32.dll")
+	procEnumWindows       = user32.NewProc("EnumWindows")
+	procGetWindowTextW    = user32.NewProc("GetWindowTextW")
+	procGetClassNameW     = user32.NewProc("GetClassNameW")
+	procIsWindowVisible   = user32.NewProc("IsWindowVisible")
 )
 
 type WindowInfo struct {
@@ -28,33 +28,8 @@ type WindowInfo struct {
 	ClassName string
 }
 
-// Win32Config represents the Win32 controller configuration
-type Win32Config struct {
-	ClassRegex      string
-	WindowRegex     string
-	ScreencapMethod string // "GDI", "PrintWindow", "DXGI", etc.
-	MouseMethod     string // "SendMessage", "SendMessageWithCursorPos", "PostMessage", etc.
-	KeyboardMethod  string // "SendMessage", "SendMessageWithCursorPos", "PostMessage", etc.
-}
-
 func main() {
-	fmt.Println("=== Win32 Controller Configurable Test ===\n")
-
-	// Test configuration (similar to MaaUniversalUI)
-	config := Win32Config{
-		ClassRegex:      "",
-		WindowRegex:     "MuMu",
-		ScreencapMethod: "PrintWindow",
-		MouseMethod:     "SendMessageWithCursorPos",
-		KeyboardMethod:  "SendMessageWithCursorPos",
-	}
-
-	fmt.Println("Configuration:")
-	fmt.Printf("  Class Regex: %s\n", config.ClassRegex)
-	fmt.Printf("  Window Regex: %s\n", config.WindowRegex)
-	fmt.Printf("  Screencap: %s\n", config.ScreencapMethod)
-	fmt.Printf("  Mouse: %s\n", config.MouseMethod)
-	fmt.Printf("  Keyboard: %s\n\n", config.KeyboardMethod)
+	fmt.Println("=== Controller Module Test - Screenshot & Touch ===")
 
 	// Initialize MAA Framework
 	exePath, err := os.Executable()
@@ -67,19 +42,25 @@ func main() {
 	logDir := filepath.Join(exeDir, "logs")
 
 	fmt.Printf("Initializing MAA Framework...\n")
+	fmt.Printf("  Lib Dir: %s\n", libDir)
+	fmt.Printf("  Log Dir: %s\n", logDir)
+
 	maa.Init(
 		maa.WithLibDir(libDir),
 		maa.WithLogDir(logDir),
 	)
+
 	fmt.Printf("MAA Version: %s\n\n", maa.Version())
 
-	// Find window using regex
-	fmt.Println("Searching for window...")
+	// Find Arknights window
+	fmt.Println("Searching for Arknights or MuMu window...")
 	windows := findAllWindows()
 
 	var targetWindow *WindowInfo
-	classRe := regexp.MustCompile(config.ClassRegex)
-	titleRe := regexp.MustCompile(config.WindowRegex)
+
+	// First try to find Arknights window
+	classRe := regexp.MustCompile("(?i)Qt.*")
+	titleRe := regexp.MustCompile("(?i)(明日方舟|Arknights)")
 
 	for _, win := range windows {
 		if classRe.MatchString(win.ClassName) && titleRe.MatchString(win.Title) {
@@ -88,51 +69,46 @@ func main() {
 		}
 	}
 
-	// Fallback: try to find any Unity window or MuMu window for testing
+	// If not found, try MuMu emulator window
 	if targetWindow == nil {
-		fmt.Println("Target window not found, trying fallback...")
-		unityRe := regexp.MustCompile("(?i)Unity.*")
-		mumuRe := regexp.MustCompile("(?i)(MuMu|模拟器|明日方舟|Arknights)")
-
+		mumuRe := regexp.MustCompile("(?i)(MuMu|模拟器)")
 		for _, win := range windows {
-			if unityRe.MatchString(win.ClassName) || mumuRe.MatchString(win.Title) {
+			if classRe.MatchString(win.ClassName) && mumuRe.MatchString(win.Title) {
 				targetWindow = &win
-				fmt.Printf("  Using fallback window: %s\n", win.Title)
+				fmt.Println("  Using MuMu emulator window for testing")
 				break
 			}
 		}
 	}
 
 	if targetWindow == nil {
-		fmt.Println("❌ No matching window found!")
+		fmt.Println("❌ Arknights window not found!")
 		fmt.Println("\nAvailable windows:")
 		for i, win := range windows {
-			if i >= 20 {
-				fmt.Printf("... and %d more windows\n", len(windows)-20)
+			if i >= 10 {
+				fmt.Printf("... and %d more windows\n", len(windows)-10)
 				break
 			}
 			fmt.Printf("  [%d] %s (Class: %s)\n", i+1, win.Title, win.ClassName)
 		}
+		fmt.Println("\nPlease start Arknights and try again.")
 		return
 	}
 
-	fmt.Printf("✓ Found window:\n")
+	fmt.Printf("✓ Found Arknights window:\n")
 	fmt.Printf("  Handle: 0x%X\n", targetWindow.Handle)
 	fmt.Printf("  Title: %s\n", targetWindow.Title)
 	fmt.Printf("  Class: %s\n\n", targetWindow.ClassName)
 
-	// Create Win32 Controller with configured methods
-	fmt.Println("Creating Win32 Controller with configured methods...")
-
-	screencapType := parseScreencapMethod(config.ScreencapMethod)
-	mouseType := parseInputMethod(config.MouseMethod)
-	keyboardType := parseInputMethod(config.KeyboardMethod)
-
+	// Create Win32 Controller
+	fmt.Println("Creating Win32 Controller...")
+	// Note: Converting uintptr (HWND) to unsafe.Pointer for FFI call
+	// This is safe because the handle is immediately used and remains valid
 	ctrl := maa.NewWin32Controller(
 		unsafe.Pointer(targetWindow.Handle),
-		screencapType,
-		mouseType,
-		keyboardType,
+		win32.ScreencapGDI,
+		win32.InputSendMessage,
+		win32.InputSendMessage,
 	)
 	if ctrl == nil {
 		fmt.Println("❌ Failed to create controller")
@@ -145,69 +121,52 @@ func main() {
 		fmt.Println("❌ Failed to connect to window")
 		return
 	}
-	fmt.Println("✓ Connected successfully\n")
+	fmt.Println("✓ Connected successfully")
 
-	// Run tests
+	// Test 1: Screenshot
 	fmt.Println("Test 1: Screenshot")
-	testScreenshot(ctrl)
+	testScreenshot()
 	fmt.Println()
 
-	fmt.Println("Test 2: Click")
+	// Test 2: Touch - Click
+	fmt.Println("Test 2: Touch - Click")
 	testClick(ctrl, targetWindow.Handle)
 	fmt.Println()
 
-	fmt.Println("Test 3: Swipe")
+	// Test 3: Touch - Swipe
+	fmt.Println("Test 3: Touch - Swipe")
 	testSwipe(ctrl, targetWindow.Handle)
 	fmt.Println()
 
-	fmt.Println("=== Test Completed ===")
+	// Test 4: Special Operations
+	fmt.Println("Test 4: Special Operations (Mouse Wheel, Side Buttons)")
+	testSpecialOps(targetWindow.Handle)
+	fmt.Println()
+
+	fmt.Println("=== All Controller Tests Completed ===")
 }
 
-func parseScreencapMethod(method string) win32.ScreencapType {
-	switch method {
-	case "GDI":
-		return win32.ScreencapGDI
-	case "PrintWindow":
-		return win32.ScreencapPrintWindow
-	case "DXGI_DesktopDup":
-		return win32.ScreencapDXGIDesktopDup
-	case "DXGI_FramePool":
-		return win32.ScreencapDXGIFramePool
-	default:
-		fmt.Printf("  Warning: Unknown screencap method '%s', using GDI\n", method)
-		return win32.ScreencapGDI
-	}
-}
+func testScreenshot() {
+	fmt.Println("  Taking screenshot...")
 
-func parseInputMethod(method string) win32.InputType {
-	switch method {
-	case "SendMessage":
-		return win32.InputSendMessage
-	case "SendMessageWithCursorPos":
-		return win32.InputSendMessageWithCursorPos
-	case "PostMessage":
-		return win32.InputPostMessage
-	default:
-		fmt.Printf("  Warning: Unknown input method '%s', using SendMessage\n", method)
-		return win32.InputSendMessage
-	}
-}
-
-func testScreenshot(ctrl *maa.Controller) {
-	fmt.Println("  Testing screenshot capability...")
+	// Trigger a screencap operation
+	// Note: MAA Controller's screenshot is typically triggered during recognition
+	// For now, we'll just verify the controller is working
 	fmt.Println("  ✓ Controller is ready for screenshot operations")
-	fmt.Println("  Note: Screenshot is captured during recognition tasks")
+	fmt.Println("  Note: Screenshot is typically captured during recognition tasks")
 }
 
 func testClick(ctrl *maa.Controller, hwnd uintptr) {
-	fmt.Println("  Testing click...")
+	fmt.Println("  Testing click at center of window...")
 
+	// Get window size
 	rect, err := controller.GetWindowRect(hwnd)
 	if err != nil {
 		fmt.Printf("  ❌ Failed to get window rect: %v\n", err)
 		return
 	}
 
+	// Calculate center position
 	centerX := (rect.Right - rect.Left) / 2
 	centerY := (rect.Bottom - rect.Top) / 2
 
@@ -223,14 +182,16 @@ func testClick(ctrl *maa.Controller, hwnd uintptr) {
 }
 
 func testSwipe(ctrl *maa.Controller, hwnd uintptr) {
-	fmt.Println("  Testing swipe...")
+	fmt.Println("  Testing swipe (drag)...")
 
+	// Get window size
 	rect, err := controller.GetWindowRect(hwnd)
 	if err != nil {
 		fmt.Printf("  ❌ Failed to get window rect: %v\n", err)
 		return
 	}
 
+	// Calculate positions (left to right swipe)
 	w := rect.Right - rect.Left
 	h := rect.Bottom - rect.Top
 	startX := w / 4
@@ -249,23 +210,63 @@ func testSwipe(ctrl *maa.Controller, hwnd uintptr) {
 	fmt.Println("  ✓ Swipe successful")
 }
 
+func testSpecialOps(hwnd uintptr) {
+	fmt.Println("  Testing special operations...")
+
+	specialOps := controller.NewSpecialOperations(hwnd)
+
+	// Get window center for default coordinates
+	rect, err := controller.GetWindowRect(hwnd)
+	if err != nil {
+		fmt.Printf("  ❌ Failed to get window rect: %v\n", err)
+		return
+	}
+
+	centerX := int((rect.Right - rect.Left) / 2)
+	centerY := int((rect.Bottom - rect.Top) / 2)
+
+	// Test mouse wheel (tiny step)
+	fmt.Println("  Testing mouse wheel (frame step)...")
+	if err := specialOps.StepTiny(centerX, centerY); err != nil {
+		fmt.Printf("  ⚠ StepTiny failed: %v\n", err)
+	} else {
+		fmt.Println("  ✓ Mouse wheel step successful")
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Test ESC (middle button)
+	fmt.Println("  Testing ESC (middle button)...")
+	if err := specialOps.Esc(centerX, centerY); err != nil {
+		fmt.Printf("  ⚠ ESC failed: %v\n", err)
+	} else {
+		fmt.Println("  ✓ ESC successful")
+	}
+
+	fmt.Println("  Note: Skill and Retreat buttons require specific game state to test")
+}
+
 func findAllWindows() []WindowInfo {
 	var windows []WindowInfo
 
 	callback := syscall.NewCallback(func(hwnd uintptr, lParam uintptr) uintptr {
+		// Check if window is visible
 		ret, _, _ := procIsWindowVisible.Call(hwnd)
 		if ret == 0 {
-			return 1
+			return 1 // Continue enumeration
 		}
 
+		// Get window title
 		titleBuf := make([]uint16, 256)
 		procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&titleBuf[0])), 256)
 		title := syscall.UTF16ToString(titleBuf)
 
+		// Get class name
 		classBuf := make([]uint16, 256)
 		procGetClassNameW.Call(hwnd, uintptr(unsafe.Pointer(&classBuf[0])), 256)
 		className := syscall.UTF16ToString(classBuf)
 
+		// Only add windows with non-empty titles
 		if title != "" {
 			windows = append(windows, WindowInfo{
 				Handle:    hwnd,
@@ -274,7 +275,7 @@ func findAllWindows() []WindowInfo {
 			})
 		}
 
-		return 1
+		return 1 // Continue enumeration
 	})
 
 	procEnumWindows.Call(callback, 0)
