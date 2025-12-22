@@ -42,3 +42,6 @@ reference/
 
 # Excel files
 *.xlsm
+
+# ocr model files
+resource/model/ocr/
