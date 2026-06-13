@@ -1,8 +1,8 @@
 """Milestone-1 smoke: in-process MAA wiring + screencap.
 
 Run after `uv sync`:
-    uv run python agent/main.py --mode win32        # PC client (Arknights.exe) / emulator window
-    uv run python agent/main.py --mode adb          # Android emulator via ADB
+    uv run python custom/main.py --mode win32        # PC client (Arknights.exe) / emulator window
+    uv run python custom/main.py --mode adb          # Android emulator via ADB
 
 Validates: maafw install, Toolkit discovery, Win32/ADB controller connect, screencap.
 """
@@ -14,14 +14,16 @@ import logging
 import os
 import sys
 
-# Make `agent/` importable as a package root (utils, config, ...).
-_AGENT_DIR = os.path.dirname(os.path.abspath(__file__))
-if _AGENT_DIR not in sys.path:
-    sys.path.insert(0, _AGENT_DIR)
+# Make the repo root importable so `custom.*` resolves when run as a script
+# (uv run python custom/main.py). No-op when run as a module (-m custom.main)
+# or via the installed package.
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
-from agent import config  # noqa: E402
-from agent.utils.logger import get_logger, setup_logging  # noqa: E402
-from agent.utils.runtime_paths import configure_paths  # noqa: E402
+from custom import config  # noqa: E402
+from custom.utils.logger import get_logger, setup_logging  # noqa: E402
+from custom.utils.runtime_paths import configure_paths  # noqa: E402
 
 logger = get_logger(__name__)
 
