@@ -1,47 +1,48 @@
-# Build outputs
-build/bin
-*.exe
-*.dll
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.pyright/
 
-# Dependencies
-node_modules
-deps
+# Build / packaging
+dist/
+build/
+*.spec
 
-# Frontend
-frontend/dist
-frontend/wailsjs
-
-# MAA Framework
-lib/
+# Runtime output
+debug/
 logs/
 *.log
 
-# Configuration
+# Local MAA runtime (we use pip maafw; keep a local lib/ copy if present)
+lib/
+
+# Generated OCR models (run: python tools/configure.py)
+resource/model/ocr/
+
+# Runtime config (calibration profiles, controller settings, ...)
 config/
 
-# Development
-*.tmp
-*.swp
-*~
-*.code-workspace
+# Reference projects (local clones, not part of this repo)
+reference/
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Go
-# (go.sum should be tracked for reproducible builds)
-
-# Downloads and archives
+# Archives
 *.zip
 *.tar.gz
 *.rar
 
-# Reference projects and code
-reference/
-
-# Excel files
+# Excel (prts-plus timeline imports)
 *.xlsm
 
-# ocr model files
-resource/model/ocr/
+# OS / editor
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+*~
+*.code-workspace

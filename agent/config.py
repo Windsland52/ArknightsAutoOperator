@@ -1,0 +1,73 @@
+"""Project-wide constants: UI ratios, thresholds, timing, keybindings.
+
+Ported from:
+- reference/prts-plus/config.py (GameRatioConfig, ImageProcessingConfig, PerformActionConfig)
+- reference/ArknightsCostBarRuler-master/ruler/utils.py (cost-bar ROI / thresholds)
+- reference/arknights-frame-assistant-main (PC frame-step timing + native keys)
+"""
+
+from __future__ import annotations
+
+# --- Game UI ratios (normalized 0-1, 720p-reference) ---
+COST_AREA_RATIO = (0.906, 0.685, 1.0, 0.755)  # (left, top, right, bottom)
+COST_NUMBER_AREA_RATIO = (0.33, 0.0, 1.0, 0.9)
+OPERATOR_AREA_RATIO = (0.0, 0.8, 1.0, 1.0)
+LAST_OPER_RATIO = (0.95, 0.9)
+SKILL_RATIO = (0.6412, 0.5857)
+RETREAT_RATIO = (0.4569, 0.3352)
+PAUSE_BUTTON_RATIO = (0.94, 0.07)  # AFA: 0.9442, 0.0666 — consistent
+SPEED_BUTTON_RATIO = (0.86, 0.07)
+START_BUTTON_RATIO = (0.87, 0.74)
+DIRECTION_RATIO = 0.2
+DEPLOY_DELTA_RATIO = 0.02
+OPERATOR_SELECTED_RATIO = 0.9
+
+SCREEN_STANDARD = (1280, 720)
+
+# --- Cost-bar ROI (reference 1920x1080) ---
+REF_WIDTH = 1920.0
+REF_HEIGHT = 1080.0
+X1_OFFSET_FROM_RIGHT = REF_WIDTH - 1739  # 181
+X2_OFFSET_FROM_RIGHT = REF_WIDTH - 1919  # 1
+Y1_OFFSET_FROM_BOTTOM = REF_HEIGHT - 810  # 270
+Y2_OFFSET_FROM_BOTTOM = REF_HEIGHT - 817  # 263
+
+# --- Cost-bar detection thresholds ---
+WHITE_THRESHOLD = 250
+MASKED_WHITE_THRESHOLD = 150
+MASKED_MAX_BRIGHTNESS = 165
+GRAY_TOLERANCE = 20
+PIXEL_TOLERANCE = 5  # frame-map nearest-match tolerance
+
+# --- Timing (frames / ms) ---
+FRAMES_PER_SECOND = 30
+TICK_MAX_DEFAULT = 30  # 1s = 30 ticks
+
+BULLET_THRESHOLD = 15  # frames before target → enter bullet time
+FRAME_THRESHOLD = 2  # frames before target → frame-by-frame
+MINIMUM_WAIT_MS = 20
+MOUSE_WAIT_MS = 100
+GENERAL_WAIT_MS = 300
+
+# PC frame-step timing (AFA hotkey_actions.ahk): resume then pause for ~1 frame.
+# Intentionally < (1000/30)=33.3ms to avoid advancing two frames under jitter.
+PC_STEP_1X_MS = 30  # 1 logical frame at 1x speed
+PC_STEP_BULLET_MS = 165  # 1 logical frame at 0.2x (bullet-time) speed
+PC_KEY_DELAY_MS = 50
+
+# --- Game native keybindings (PC client, Arknights.exe) ---
+VK_SPACE = 0x20  # pause
+VK_ESCAPE = 0x1B  # menu / resume
+VK_D = 0x44  # toggle speed
+VK_E = 0x45  # skill
+VK_Q = 0x51  # retreat
+VK_V = 0x56  # abandon operation
+
+PC_PROCESS_NAME = "Arknights.exe"
+
+# --- Calibration clustering ---
+DEFAULT_NUM_CYCLES = 6
+SIMILARITY_THRESHOLD = 0.8
+CYCLE_HIGH_THRESHOLD = 0.9
+CYCLE_LOW_THRESHOLD = 0.1
+OUTLIER_MULTIPLIER = 5.0
