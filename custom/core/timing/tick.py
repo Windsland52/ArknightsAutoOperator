@@ -34,43 +34,21 @@ def find_cost_bar_roi(width: int, height: int) -> Roi:
     return (round(x1), round(x2), round((y1 + y2) / 2))
 
 
-_BRIDGE_MAX_GAP = 25  # 最大可桥接暗间隙（部署 UI 遮挡宽度，px）
-_BRIDGE_MIN_RUN = 3  # 间隙后至少 N 连续白才认为遮挡（过滤杂散单像素）
 _GRAY_EXT_MIN = 35  # 灰色扩展最小白色填充（低于此值不扩展，避免遮罩灰色背景误判）
 
 
-def _bridged_fill_width(white: np.ndarray, valid: np.ndarray) -> int | None:
-    """左→右扫描，遇短暗间隙且后方有 ≥ _BRIDGE_MIN_RUN 连续白时桥接（视为遮挡，跳过继续）。
-
-    干净费用条（无间隙）行为与普通左→右一致；用于穿透部署拖拽时部署 UI 的固定遮挡。
-    """
+def _contiguous_fill_width(white: np.ndarray, valid: np.ndarray) -> int | None:
+    """左→右扫描：从 x1 起的连续白像素数。无桥接（避免部署 UI 杂散白误判）。"""
     total = len(white)
-    pos = 0
-    while pos < total:
-        if white[pos]:
-            pos += 1
-            continue
-        # pos 处暗；看前方 _BRIDGE_MAX_GAP 内是否有白
-        ahead = pos + 1
-        limit = min(pos + _BRIDGE_MAX_GAP, total)
-        while ahead < limit and not white[ahead]:
-            ahead += 1
-        if ahead >= limit:
-            break  # 间隙外无白 → 真实未填充边
-        # 检查 ahead 起的连续白长度
-        run = 0
-        j = ahead
-        while j < total and white[j]:
-            run += 1
-            j += 1
-        if run >= _BRIDGE_MIN_RUN:
-            pos = ahead + run  # 桥接：跳过间隙 + 后续白段
-        else:
-            break  # 杂散单像素 → 真实边
-    if pos >= total:
+    if not white[0]:
+        return 0
+    not_white = np.where(~white)[0]
+    not_white_after = not_white[not_white > 0]
+    if not_white_after.size == 0:
         return total
-    if valid[pos:].all():
-        return pos
+    edge = int(not_white_after[0])
+    if valid[edge:].all():
+        return edge
     return None
 
 
@@ -109,7 +87,7 @@ def get_filled_pixel_width(frame: np.ndarray, roi: Roi) -> int | None:
     )
     result = 0
     if white[0]:
-        r = _bridged_fill_width(white, gray)
+        r = _contiguous_fill_width(white, gray)
         if r is None:
             return None
         result = r
@@ -130,7 +108,7 @@ def get_filled_pixel_width(frame: np.ndarray, roi: Roi) -> int | None:
             & ~too_bright
         )
         if mw[0]:
-            r = _bridged_fill_width(mw, gray & ~too_bright)
+            r = _contiguous_fill_width(mw, gray & ~too_bright)
             if r is not None:
                 result = r
 
