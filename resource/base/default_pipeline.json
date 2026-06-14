@@ -1,0 +1,29 @@
+{
+    // 节点默认参数。MAA Resource 加载本 bundle 时自动读取。
+    // OCR 模型从 resource/base/model/ocr 加载（由 tools/configure.py 从 MaaCommonAssets 拷入）。
+    "Default": {
+        "rate_limit": 1000,
+        "timeout": 20000,
+        "pre_delay": 200,
+        "post_delay": 200
+    },
+    "TemplateMatch": {
+        "recognition": "TemplateMatch",
+        "threshold": 0.7,
+        "method": 5
+    },
+    "OCR": {
+        "recognition": "OCR",
+        "threshold": 0.3,
+        "order_by": "Horizontal",
+        "replace": []
+    },
+    "Click": {
+        "action": "Click",
+        "target": true
+    },
+    "Swipe": {
+        "action": "Swipe",
+        "duration": 200
+    }
+}

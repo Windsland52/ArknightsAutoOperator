@@ -23,7 +23,7 @@ logs/
 lib/
 
 # Generated OCR models (run: python tools/configure.py)
-resource/model/ocr/
+resource/base/model/ocr/
 
 # Runtime config (calibration profiles, controller settings, ...)
 config/
