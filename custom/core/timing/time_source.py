@@ -129,9 +129,13 @@ class TimeSource:
         return lf
 
     def _extrapolate(self, stuck_lf: int, total: int, now: float) -> int:
-        """PLL 外推：按估算周期 + 卡住时长推算实际帧。"""
-        if self._cycle_period <= 0 or self._stuck_lf is None:
-            return stuck_lf  # 周期未知 → 不外推
+        """PLL 外推（已禁用）。
+
+        60fps 实测：部署拖拽时费用条完全冻结（60/60 帧不变），费用回复暂停。
+        外推基于"费用条在走"的假设 → 假设不成立 → 禁用。
+        部署时的帧级计时改由执行器 steptiny（里程碑5）处理。
+        """
+        return stuck_lf
         elapsed = now - self._stuck_since
         fps = total / self._cycle_period
         extrap = stuck_lf + int(elapsed * fps)
