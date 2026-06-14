@@ -107,9 +107,14 @@ def sync_maps(force_remote: bool = False) -> None:
     for p in map_dir.glob("*.json"):
         if "#f#" in p.name:
             continue
-        code = p.name.split("-")[0]
-        if code not in codes:
-            codes[code] = p.name
+        # 读 JSON 内的 code 字段做映射（如 "1-7" → 文件名）
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            code = data.get("code", "")
+            if code:
+                codes[code] = p.name
+        except Exception:  # noqa: BLE001
+            pass
     (data_dir / "level_codes.json").write_text(
         json.dumps(dict(sorted(codes.items())), indent=2, ensure_ascii=False),
         encoding="utf-8",
