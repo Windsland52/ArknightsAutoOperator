@@ -31,6 +31,10 @@ resource/base/model/ocr/
 # Runtime config (calibration profiles, controller settings, ...)
 config/
 
+# Generated game data (run: uv run python -m custom.resources.syncer)
+data/map/
+data/avatar/
+
 # Reference projects (local clones, not part of this repo)
 reference/
 

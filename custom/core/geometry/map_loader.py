@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Optional
 
 from custom.utils.runtime_paths import project_root
 
@@ -26,7 +25,7 @@ def _map_dirs() -> list[Path]:
     return [d for d in dirs if d.exists()]
 
 
-def find_map_file(code: str) -> Optional[Path]:
+def find_map_file(code: str) -> Path | None:
     """按关卡代号（如 '1-7'）查找地图文件。"""
     for d in _map_dirs():
         # 精确匹配 code 前缀
@@ -36,7 +35,7 @@ def find_map_file(code: str) -> Optional[Path]:
     return None
 
 
-def load_map(code: str) -> Optional[dict]:
+def load_map(code: str) -> dict | None:
     """加载关卡数据。code 如 '1-7'。"""
     path = find_map_file(code)
     if path is None:
