@@ -47,7 +47,8 @@ def pick_win32_controller():  # type: ignore[no-untyped-def]
             break
     if target is None:
         target = windows[0]
-        logger.info("no Arknights/emulator window matched; using first: %r", getattr(target, "window_name", ""))
+        name = getattr(target, "window_name", "")
+        logger.info("no Arknights/emulator window matched; using first: %r", name)
 
     return Win32Controller(
         hWnd=target.hwnd,
