@@ -36,6 +36,7 @@ def find_cost_bar_roi(width: int, height: int) -> Roi:
 
 _BRIDGE_MAX_GAP = 25  # 最大可桥接暗间隙（部署 UI 遮挡宽度，px）
 _BRIDGE_MIN_RUN = 3  # 间隙后至少 N 连续白才认为遮挡（过滤杂散单像素）
+_GRAY_EXT_MIN = 35  # 灰色扩展最小白色填充（低于此值不扩展，避免遮罩灰色背景误判）
 
 
 def _bridged_fill_width(white: np.ndarray, valid: np.ndarray) -> int | None:
@@ -134,7 +135,8 @@ def get_filled_pixel_width(frame: np.ndarray, roi: Roi) -> int | None:
                 result = r
 
     # --- 灰色扩展（部署遮罩外费用条是灰色 ~155，继续扫 >150）---
-    if result > 0 and result < total:
+    # 只在白色填充接近遮罩边缘时才扩展（避免低填充时把遮罩灰色背景误认为填充）
+    if result >= _GRAY_EXT_MIN and result < total:
         ext = (
             (c0 > config.MASKED_WHITE_THRESHOLD)
             & (c1 > config.MASKED_WHITE_THRESHOLD)
