@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 from PySide6.QtCore import Qt, Signal
@@ -18,6 +19,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
+    QCompleter,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
@@ -65,7 +67,11 @@ class EditorWindow(QWidget):
         self.lbl_map = QLabel("关卡:")
         self.edit_map = QLineEdit()
         self.edit_map.setPlaceholderText("如 1-7")
-        self.edit_map.setMaximumWidth(80)
+        self.edit_map.setMaximumWidth(120)
+        self._map_completer = QCompleter()
+        self._map_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.edit_map.setCompleter(self._map_completer)
+        self._load_level_codes()
 
         self.rb_author = QRadioButton("打轴")
         self.rb_align = QRadioButton("对轴")
@@ -119,8 +125,13 @@ class EditorWindow(QWidget):
         p_layout.addWidget(self.cb_type, 0, 1)
 
         p_layout.addWidget(QLabel("干员:"), 1, 0)
-        self.edit_oper = QLineEdit()
-        p_layout.addWidget(self.edit_oper, 1, 1)
+        self.cb_oper = QComboBox()
+        self.cb_oper.setEditable(True)
+        oper_completer = QCompleter()
+        oper_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.cb_oper.setCompleter(oper_completer)
+        self._load_operators()
+        p_layout.addWidget(self.cb_oper, 1, 1)
 
         p_layout.addWidget(QLabel("位置:"), 2, 0)
         pos_row = QHBoxLayout()
@@ -161,6 +172,33 @@ class EditorWindow(QWidget):
         self.btn_apply.clicked.connect(self._on_apply)
         self.btn_delete.clicked.connect(self._on_delete)
         self.table.currentItemChanged.connect(self._on_select)
+
+    # --- 数据加载 ---
+
+    def _load_operators(self) -> None:
+        """从 data/operator_names.json 加载干员名列表。"""
+        from custom.utils.runtime_paths import project_root
+
+        path = project_root() / "data" / "operator_names.json"
+        if not path.exists():
+            return
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        names = [item["name"] for item in raw if item.get("name")]
+        self.cb_oper.addItems(names)
+
+    def _load_level_codes(self) -> None:
+        """从 data/level_codes.json 加载关卡代号。"""
+        from custom.utils.runtime_paths import project_root
+
+        path = project_root() / "data" / "level_codes.json"
+        if not path.exists():
+            return
+        codes = json.loads(path.read_text(encoding="utf-8"))
+        self._map_completer.setModel(QCompleter().model())
+        from PySide6.QtCore import QStringListModel
+
+        model = QStringListModel(list(codes.keys()))
+        self._map_completer.setModel(model)
 
     # --- 实时帧更新（由外部调用）---
 
@@ -204,7 +242,7 @@ class EditorWindow(QWidget):
             return
         a = self.timeline.actions[row]
         self.cb_type.setCurrentText(a.action_type.value)
-        self.edit_oper.setText(a.oper)
+        self.cb_oper.setCurrentText(a.oper)
         self.edit_pos.setText(a.pos)
         self.cb_dir.setCurrentText(a.direction.value)
 
@@ -214,7 +252,7 @@ class EditorWindow(QWidget):
             return
         a = self.timeline.actions[row]
         a.action_type = ActionType(self.cb_type.currentText())
-        a.oper = self.edit_oper.text().strip()
+        a.oper = self.cb_oper.currentText().strip()
         a.pos = self.edit_pos.text().strip()
         a.direction = DirectionType(self.cb_dir.currentText())
         self._refresh_table()
