@@ -290,16 +290,16 @@ class ExecuteTimeline(CustomAction):
 
         if is_pc:
             # PC: 左键拖拽
-            ctrl.post_touch_down(0, avatar_x, avatar_y, 1).wait()
+            ctrl.post_touch_down(avatar_x, avatar_y, 0, 1).wait()
             time.sleep(0.05)
-            ctrl.post_touch_move(0, deploy_x, deploy_y, 1).wait()
+            ctrl.post_touch_move(deploy_x, deploy_y, 0, 1).wait()
             time.sleep(0.05)
             ctrl.post_touch_up(0).wait()
         else:
             # 模拟器: 右键拖拽（contact=1）
-            ctrl.post_touch_down(1, avatar_x, avatar_y, 1).wait()
+            ctrl.post_touch_down(avatar_x, avatar_y, 1, 1).wait()
             time.sleep(0.1)
-            ctrl.post_touch_move(1, deploy_x, deploy_y, 1).wait()
+            ctrl.post_touch_move(deploy_x, deploy_y, 1, 1).wait()
             time.sleep(0.1)
             ctrl.post_touch_up(1).wait()
 
@@ -333,9 +333,9 @@ class ExecuteTimeline(CustomAction):
         x2 = int(max(0, min(1, x + dx)) * 1280)
         y2 = int(max(0, min(1, y + dy)) * 720)
 
-        ctrl.post_touch_down(0, x1, y1, 1).wait()
+        ctrl.post_touch_down(x1, y1, 0, 1).wait()
         time.sleep(0.05)
-        ctrl.post_touch_move(0, x2, y2, 1).wait()
+        ctrl.post_touch_move(x2, y2, 0, 1).wait()
         time.sleep(0.05)
         ctrl.post_touch_up(0).wait()
         time.sleep(config.GENERAL_WAIT_MS / 1000)
