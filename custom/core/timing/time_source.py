@@ -25,6 +25,7 @@ from custom.core.timing.calibration import FullCalibrationData
 logger = logging.getLogger(__name__)
 
 RESET_TIMEOUT_S = 1.5
+_WRAP_MARGIN = 3  # 帧下降超过此值 → 判定周期 wrap（过滤抖动）
 
 
 def format_timer(total_frames: int, fps: int = config.FRAMES_PER_SECOND) -> str:
@@ -77,8 +78,8 @@ class TimeSource:
             return None
 
         total_this = profile.total_frames
-        # 周期完成：上一帧高位、本帧低位 → 累计 + 计数
-        if self.previous_frame > total_this * 0.75 and lf < total_this * 0.25:
+        # 周期完成：帧显著下降（> _WRAP_MARGIN）→ wrap（适配部署时 bar 不走满的情况）
+        if self.previous_frame >= 0 and lf < self.previous_frame - _WRAP_MARGIN:
             self.cycle_base_frames += total_this
             self.cycle_counter += 1
             logger.info(
