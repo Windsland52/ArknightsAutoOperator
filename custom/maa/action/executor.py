@@ -26,6 +26,7 @@ from maa.controller import Controller
 from maa.custom_action import CustomAction
 
 from custom import config
+from custom.core.avatar import has_avatar, learn_avatar, locate_avatar
 from custom.core.battle.action import Action, ActionType, DirectionType
 from custom.core.battle.game_time import GameTime
 from custom.core.geometry.convert_pos import convert_position
@@ -92,7 +93,7 @@ class ExecuteTimeline(CustomAction):
                 return CustomAction.RunResult(success=False)
 
             logger.info("[%d/%d] %s", i + 1, len(actions), action)
-            self._perform_action(ctrl, action, time_source, is_pc)
+            self._perform_action(context, ctrl, action, time_source, is_pc)
 
         return CustomAction.RunResult(success=True)
 
@@ -129,6 +130,19 @@ class ExecuteTimeline(CustomAction):
 
         return actions
 
+    def _locate_oper(self, context: Context, oper_name: str) -> tuple[float, float] | None:
+        """定位干员头像。无缓存时尝试学习。"""
+        if has_avatar(oper_name):
+            img = context.tasker.controller.post_screencap().wait().get()
+            return locate_avatar(context, img, oper_name)
+
+        logger.info("干员 %s 无缓存头像，尝试学习...", oper_name)
+        img = context.tasker.controller.post_screencap().wait().get()
+        if learn_avatar(img, oper_name):
+            logger.info("头像学习成功，重新定位")
+            return locate_avatar(context, img, oper_name)
+        return None
+
     def _detect_platform(self, ctrl: Controller) -> bool:
         """检测是否 PC 客户端（Win32）。"""
         info = ctrl.info
@@ -137,7 +151,7 @@ class ExecuteTimeline(CustomAction):
         return is_win32
 
     def _perform_action(
-        self, ctrl: Controller, action: Action, ts: TimeSource, is_pc: bool
+        self, context: Context, ctrl: Controller, action: Action, ts: TimeSource, is_pc: bool
     ) -> None:
         """执行单个动作：逼近目标帧 → 子弹时间 → 逐帧 → 操作。"""
         target = action.get_game_time()
@@ -167,7 +181,7 @@ class ExecuteTimeline(CustomAction):
 
         # 执行动作
         if action.action_type == ActionType.DEPLOY:
-            self._deploy(ctrl, action, is_pc)
+            self._deploy(context, ctrl, action, is_pc)
         elif action.action_type == ActionType.SKILL:
             self._skill(ctrl, action, is_pc)
         elif action.action_type == ActionType.RETREAT:
@@ -240,7 +254,7 @@ class ExecuteTimeline(CustomAction):
             ctrl.post_click(640, 360).wait()
             time.sleep(0.05)
 
-    def _deploy(self, ctrl: Controller, action: Action, is_pc: bool) -> None:
+    def _deploy(self, context: Context, ctrl: Controller, action: Action, is_pc: bool) -> None:
         """部署干员。"""
         if action.view_pos_side is None or action.oper is None:
             logger.error("部署缺少坐标/干员")
@@ -248,10 +262,15 @@ class ExecuteTimeline(CustomAction):
 
         logger.info("部署 %s at %s", action.oper, action.pos)
 
-        # TODO: 定位干员头像（里程碑4 avatar.py 或 MAA TemplateMatch）
-        # 暂用最后干员位置
-        avatar_x = int(config.LAST_OPER_RATIO[0] * 1280)
-        avatar_y = int(config.LAST_OPER_RATIO[1] * 720)
+        # 定位干员头像（MAA TemplateMatch，回退到 LAST_OPER_RATIO）
+        avatar_pos = self._locate_oper(context, action.oper)
+        if avatar_pos is not None:
+            avatar_x = int(avatar_pos[0] * 1280)
+            avatar_y = int(avatar_pos[1] * 720)
+        else:
+            logger.warning("头像定位失败，回退到 LAST_OPER_RATIO")
+            avatar_x = int(config.LAST_OPER_RATIO[0] * 1280)
+            avatar_y = int(config.LAST_OPER_RATIO[1] * 720)
 
         # 部署位置
         deploy_x = int(action.view_pos_side[0] * 1280)
