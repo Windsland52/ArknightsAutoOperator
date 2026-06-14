@@ -17,7 +17,8 @@
                 "screencap": "FramePool",
                 "mouse": "PostMessage",
                 "keyboard": "PostMessage"
-            }
+            },
+            "display_short_side": 720
         },
         {
             "name": "Android",

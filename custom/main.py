@@ -41,14 +41,15 @@ def pick_win32_controller():  # type: ignore[no-untyped-def]
     for w in windows:
         name = getattr(w, "window_name", "") or ""
         cls = getattr(w, "class_name", "") or ""
-        if any(k in name for k in ("Arknights", "明日方舟", "MuMu", "雷电", "Leidian")):
+        # Win32 只认 PC 官方客户端（明日方舟 / UnityWndClass）；模拟器走 ADB 路径。
+        if "明日方舟" in name or "Unity" in cls:
             target = w
             logger.info("matched window: name=%r class=%r hwnd=%s", name, cls, w.hwnd)
             break
     if target is None:
         target = windows[0]
         name = getattr(target, "window_name", "")
-        logger.info("no Arknights/emulator window matched; using first: %r", name)
+        logger.info("no 明日方舟 window matched; using first: %r", name)
 
     return Win32Controller(
         hWnd=target.hwnd,
@@ -99,6 +100,9 @@ def main() -> int:
     logger.info("connecting controller (mode=%s)...", args.mode)
     controller.post_connection().wait()
     logger.info("connected")
+
+    # 缩放到 1280x720（MAA 标准，与 MaaAssistantArknights/maafw 一致；ROI 在此分辨率校准）。
+    controller.set_screenshot_target_short_side(720)
 
     logger.info("screencap...")
     image = controller.post_screencap().wait().get()
