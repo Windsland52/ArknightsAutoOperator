@@ -108,9 +108,18 @@ class ExecuteTimeline(CustomAction):
 
         actions: list[Action] = []
         for item in raw:
+            # 时间坐标转换：frame → cost + tick（TICK_MAX=30）
+            frame = item.get("frame")
+            if frame is not None:
+                cost_val = frame // config.TICK_MAX_DEFAULT
+                tick_val = frame % config.TICK_MAX_DEFAULT
+            else:
+                cost_val = item.get("cost")
+                tick_val = item.get("tick")
+
             a = Action(
-                cost=item.get("cost"),
-                tick=item.get("tick"),
+                cost=cost_val,
+                tick=tick_val,
                 time=item.get("time"),
                 action_type=ActionType(item["action_type"]) if "action_type" in item else None,
                 oper=item.get("oper"),
