@@ -106,26 +106,46 @@ def get_filled_pixel_width(frame: np.ndarray, roi: Roi) -> int | None:
         & (c1 > config.WHITE_THRESHOLD)
         & (c2 > config.WHITE_THRESHOLD)
     )
+    result = 0
     if white[0]:
-        return _bridged_fill_width(white, gray)
+        r = _bridged_fill_width(white, gray)
+        if r is None:
+            return None
+        result = r
 
     # --- 遮罩模式回退（x1 非普通白）---
-    too_bright = (
-        (c0 > config.MASKED_MAX_BRIGHTNESS)
-        | (c1 > config.MASKED_MAX_BRIGHTNESS)
-        | (c2 > config.MASKED_MAX_BRIGHTNESS)
-    )
-    if too_bright[-1]:
-        return 0
-    mw = (
-        (c0 > config.MASKED_WHITE_THRESHOLD)
-        & (c1 > config.MASKED_WHITE_THRESHOLD)
-        & (c2 > config.MASKED_WHITE_THRESHOLD)
-        & ~too_bright
-    )
-    if mw[0]:
-        return _bridged_fill_width(mw, gray & ~too_bright)
-    return 0
+    if result == 0:
+        too_bright = (
+            (c0 > config.MASKED_MAX_BRIGHTNESS)
+            | (c1 > config.MASKED_MAX_BRIGHTNESS)
+            | (c2 > config.MASKED_MAX_BRIGHTNESS)
+        )
+        if too_bright[-1]:
+            return 0
+        mw = (
+            (c0 > config.MASKED_WHITE_THRESHOLD)
+            & (c1 > config.MASKED_WHITE_THRESHOLD)
+            & (c2 > config.MASKED_WHITE_THRESHOLD)
+            & ~too_bright
+        )
+        if mw[0]:
+            r = _bridged_fill_width(mw, gray & ~too_bright)
+            if r is not None:
+                result = r
+
+    # --- 灰色扩展（部署遮罩外费用条是灰色 ~155，继续扫 >150）---
+    if result > 0 and result < total:
+        ext = (
+            (c0 > config.MASKED_WHITE_THRESHOLD)
+            & (c1 > config.MASKED_WHITE_THRESHOLD)
+            & (c2 > config.MASKED_WHITE_THRESHOLD)
+        )
+        pos = result
+        while pos < total and ext[pos]:
+            pos += 1
+        result = pos
+
+    return result
 
 
 def get_logical_frame(frame: np.ndarray, roi: Roi, pixel_map: dict[str, int]) -> int | None:
