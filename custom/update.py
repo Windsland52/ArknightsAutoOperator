@@ -62,22 +62,18 @@ class UpdateChecker:
     def update_resources(
         self,
         force_remote: bool = True,
-        include_avatars: bool = True,
         progress_cb=None,
     ) -> None:
-        """从远程更新全部资源（干员名 + 地图 + 头像）。
+        """从远程更新全部资源（干员名 + 地图）。
 
         Args:
             force_remote: 强制从 GitHub 下载（不依赖 sibling repo）。
-            include_avatars: 是否下载头像。
             progress_cb: 可选进度回调 (message: str) -> None。
         """
         steps = [
             ("干员名", lambda: syncer.sync_operators(force_remote)),
             ("地图", lambda: syncer.sync_maps(force_remote)),
         ]
-        if include_avatars:
-            steps.append(("头像", lambda: syncer.sync_avatars(all_avatars=True)))
 
         for name, fn in steps:
             if progress_cb:

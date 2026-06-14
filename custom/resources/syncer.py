@@ -1,10 +1,15 @@
-"""资源同步器：从 MaaAssistantArknights（本地或远程 GitHub）提取数据。
+"""资源同步器：从 MaaAssistantArknights（本地或远程 GitHub）提取干员/地图数据。
 
 用法：
-    uv run python -m custom.resources.syncer              # 同步全部（本地优先，远程回退）
-    uv run python -m custom.resources.syncer --all-avatars  # 全量下载头像
-    uv run python -m custom.resources.syncer --avatars "斑点,芬"  # 指定干员
-    uv run python -m custom.resources.syncer --remote  # 从 GitHub 下载
+    uv run python -m custom.resources.syncer          # 同步全部（本地优先，远程回退）
+    uv run python -m custom.resources.syncer --remote  # 强制从 GitHub 下载
+
+产出（到 data/）：
+- operator_mapping.json / operator_names.json：干员名 + charId
+- map/*.json：关卡地图数据
+- level_codes.json：关卡代号列表
+
+注意：头像不在此同步——按 MAA 方式运行时自学习（见 custom.core.avatar）。
 """
 
 from __future__ import annotations
@@ -29,9 +34,6 @@ _GITHUB = "https://raw.githubusercontent.com/MaaAssistantArknights/MaaAssistantA
 _BATTLE_DATA_REMOTE = f"{_GITHUB}/resource/battle_data.json"
 _TILE_POS_API = "https://api.github.com/repos/MaaAssistantArknights/MaaAssistantArknights/contents/resource/Arknights-Tile-Pos"
 
-# 头像来源待定（prts-plus 预置本地，MAA 不用头像匹配）
-# TODO: 确定头像获取方式后实现下载
-
 
 def _download(url: str, dest: Path) -> bool:
     try:
@@ -53,9 +55,6 @@ def _get_battle_data(force_remote: bool = False) -> dict | None:
     if _download(_BATTLE_DATA_REMOTE, tmp):
         return json.loads(tmp.read_text(encoding="utf-8"))
     return None
-
-
-# --- 干员 ---
 
 
 def sync_operators(force_remote: bool = False) -> None:
@@ -94,9 +93,6 @@ def sync_operators(force_remote: bool = False) -> None:
     logger.info("干员数据: %d 名", len(names))
 
 
-# --- 地图 ---
-
-
 def sync_maps(force_remote: bool = False) -> None:
     data_dir = project_root() / "data"
     map_dir = data_dir / "map"
@@ -107,7 +103,6 @@ def sync_maps(force_remote: bool = False) -> None:
     else:
         count = _download_maps_remote(map_dir)
 
-    # 生成 level_codes
     codes: dict[str, str] = {}
     for p in map_dir.glob("*.json"):
         if "#f#" in p.name:
@@ -159,24 +154,6 @@ def _download_maps_remote(dst_dir: Path) -> int:
     return count
 
 
-# --- 头像 ---
-
-
-def sync_avatars(
-    operator_names: list[str] | None = None,
-    all_avatars: bool = False,
-) -> None:
-    """下载干员头像（TODO: 头像来源待确定）。
-
-    prts-plus 预置本地头像文件；MaaAssistantArknights 不用头像匹配。
-    当前无可靠的远程头像源。确定后在此实现下载逻辑。
-    """
-    logger.warning("头像下载尚未实现（来源待确定）。prts-plus 用本地预置文件。")
-
-
-# --- 统一入口 ---
-
-
 def sync_all(force_remote: bool = False) -> None:
     logger.info("资源同步%s...", "（远程）" if force_remote else "")
     sync_operators(force_remote)
@@ -191,16 +168,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="资源同步器")
     parser.add_argument("--operators", action="store_true")
     parser.add_argument("--maps", action="store_true")
-    parser.add_argument("--all-avatars", action="store_true", help="下载全部头像")
-    parser.add_argument("--avatars", type=str, help="指定干员名（逗号分隔）")
     parser.add_argument("--remote", action="store_true", help="强制从 GitHub 下载")
     args = parser.parse_args()
 
-    if args.all_avatars:
-        sync_avatars(all_avatars=True)
-    elif args.avatars:
-        sync_avatars([n.strip() for n in args.avatars.split(",") if n.strip()])
-    elif args.operators:
+    if args.operators:
         sync_operators(args.remote)
     elif args.maps:
         sync_maps(args.remote)
