@@ -34,6 +34,45 @@ def find_cost_bar_roi(width: int, height: int) -> Roi:
     return (round(x1), round(x2), round((y1 + y2) / 2))
 
 
+_BRIDGE_MAX_GAP = 25  # 最大可桥接暗间隙（部署 UI 遮挡宽度，px）
+_BRIDGE_MIN_RUN = 3  # 间隙后至少 N 连续白才认为遮挡（过滤杂散单像素）
+
+
+def _bridged_fill_width(white: np.ndarray, valid: np.ndarray) -> int | None:
+    """左→右扫描，遇短暗间隙且后方有 ≥ _BRIDGE_MIN_RUN 连续白时桥接（视为遮挡，跳过继续）。
+
+    干净费用条（无间隙）行为与普通左→右一致；用于穿透部署拖拽时部署 UI 的固定遮挡。
+    """
+    total = len(white)
+    pos = 0
+    while pos < total:
+        if white[pos]:
+            pos += 1
+            continue
+        # pos 处暗；看前方 _BRIDGE_MAX_GAP 内是否有白
+        ahead = pos + 1
+        limit = min(pos + _BRIDGE_MAX_GAP, total)
+        while ahead < limit and not white[ahead]:
+            ahead += 1
+        if ahead >= limit:
+            break  # 间隙外无白 → 真实未填充边
+        # 检查 ahead 起的连续白长度
+        run = 0
+        j = ahead
+        while j < total and white[j]:
+            run += 1
+            j += 1
+        if run >= _BRIDGE_MIN_RUN:
+            pos = ahead + run  # 桥接：跳过间隙 + 后续白段
+        else:
+            break  # 杂散单像素 → 真实边
+    if pos >= total:
+        return total
+    if valid[pos:].all():
+        return pos
+    return None
+
+
 def get_filled_pixel_width(frame: np.ndarray, roi: Roi) -> int | None:
     """提取费用条填充像素宽。
 
@@ -61,23 +100,16 @@ def get_filled_pixel_width(frame: np.ndarray, roi: Roi) -> int | None:
     if not gray[-1]:
         return None
 
-    # --- 普通模式（左→右：从 x1 起的连续白像素，忽略右侧杂散白）---
+    # --- 普通模式（左→右 + 间隙桥接，穿透部署 UI 遮挡）---
     white = (
         (c0 > config.WHITE_THRESHOLD)
         & (c1 > config.WHITE_THRESHOLD)
         & (c2 > config.WHITE_THRESHOLD)
     )
     if white[0]:
-        not_white = np.where(~white)[0]
-        not_white_after = not_white[not_white > 0]
-        if not_white_after.size == 0:
-            return total  # 全白（费用满）
-        edge = int(not_white_after[0])
-        if gray[edge:].all():
-            return edge
-        return None
+        return _bridged_fill_width(white, gray)
 
-    # --- 遮罩模式回退（x1 非普通白；左→右）---
+    # --- 遮罩模式回退（x1 非普通白）---
     too_bright = (
         (c0 > config.MASKED_MAX_BRIGHTNESS)
         | (c1 > config.MASKED_MAX_BRIGHTNESS)
@@ -92,13 +124,7 @@ def get_filled_pixel_width(frame: np.ndarray, roi: Roi) -> int | None:
         & ~too_bright
     )
     if mw[0]:
-        not_mw = np.where(~mw)[0]
-        not_mw_after = not_mw[not_mw > 0]
-        if not_mw_after.size == 0:
-            return total
-        edge = int(not_mw_after[0])
-        if gray[edge:].all() and not too_bright[edge:].any():
-            return edge
+        return _bridged_fill_width(mw, gray & ~too_bright)
     return 0
 
 
