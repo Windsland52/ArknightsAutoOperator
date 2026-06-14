@@ -61,44 +61,44 @@ def get_filled_pixel_width(frame: np.ndarray, roi: Roi) -> int | None:
     if not gray[-1]:
         return None
 
-    # --- 普通模式 ---
+    # --- 普通模式（左→右：从 x1 起的连续白像素，忽略右侧杂散白）---
     white = (
         (c0 > config.WHITE_THRESHOLD)
         & (c1 > config.WHITE_THRESHOLD)
         & (c2 > config.WHITE_THRESHOLD)
     )
-    if white[-1]:
-        return total
-    non_end_white = np.where(white[:-1])[0]  # 右→左扫到第一个白边
-    if non_end_white.size > 0:
-        edge = int(non_end_white[-1])
-        # edge 右侧（扫描经过的填充段）必须全灰度，否则 ROI 含杂色 → 无效。
-        if gray[edge + 1 : -1].all():
-            return edge + 1
+    if white[0]:
+        not_white = np.where(~white)[0]
+        not_white_after = not_white[not_white > 0]
+        if not_white_after.size == 0:
+            return total  # 全白（费用满）
+        edge = int(not_white_after[0])
+        if gray[edge:].all():
+            return edge
         return None
 
-    # --- 遮罩模式回退（filled == 0）---
+    # --- 遮罩模式回退（x1 非普通白；左→右）---
     too_bright = (
         (c0 > config.MASKED_MAX_BRIGHTNESS)
         | (c1 > config.MASKED_MAX_BRIGHTNESS)
         | (c2 > config.MASKED_MAX_BRIGHTNESS)
     )
     if too_bright[-1]:
-        return 0  # 末端过亮，不可能是遮罩模式。
-    masked_white = (
+        return 0
+    mw = (
         (c0 > config.MASKED_WHITE_THRESHOLD)
         & (c1 > config.MASKED_WHITE_THRESHOLD)
         & (c2 > config.MASKED_WHITE_THRESHOLD)
+        & ~too_bright
     )
-    if masked_white[-1]:
-        return total
-    candidates = np.where(masked_white[:-1] & ~too_bright[:-1])[0]
-    if candidates.size > 0:
-        edge = int(candidates[-1])
-        seg_gray = gray[edge + 1 : -1]
-        seg_bright = too_bright[edge + 1 : -1]
-        if seg_gray.all() and not seg_bright.any():
-            return edge + 1
+    if mw[0]:
+        not_mw = np.where(~mw)[0]
+        not_mw_after = not_mw[not_mw > 0]
+        if not_mw_after.size == 0:
+            return total
+        edge = int(not_mw_after[0])
+        if gray[edge:].all() and not too_bright[edge:].any():
+            return edge
     return 0
 
 
