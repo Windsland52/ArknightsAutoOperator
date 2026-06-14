@@ -1,10 +1,9 @@
 {
-    // ProjectInterface v2 声明。Option B（自建集成应用，进程内 MAA）——不声明 agent 子进程。
-    // 即使我们用自己的 UI 跑，本文件也是项目自描述 + 控制器/资源配置规范位置，且通用 UI 可据此加载。
     "interface_version": 2,
     "name": "arknights-auto-operator",
     "label": "明日方舟自动凹图",
     "version": "v0.1.0",
+    "icon": "logo.png",
     "description": "帧级自动凹图 + 费用条计时 + 打轴对轴（MaaFramework 方案二 + PySide6）",
     "github": "https://github.com/Windsland52/ArknightsAutoOperator",
     "controller": [
@@ -34,7 +33,5 @@
             "path": ["./resource/base"]
         }
     ],
-    "import": [
-        "./tasks/farm.json"
-    ]
+    "import": ["./tasks/farm.json"]
 }

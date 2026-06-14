@@ -1,0 +1,24 @@
+node_modules/
+dist/
+build/
+.venv/
+.uv-cache/
+debug/
+logs/
+lib/
+reference/
+MaaCommonAssets/
+data/
+docs/
+pnpm-lock.yaml
+uv.lock
+
+# generated OCR models
+resource/base/model/ocr/*.onnx
+
+# synced MAA schemas (managed by tools/sync-schema.mjs)
+tools/schema/interface.schema.json
+tools/schema/interface_config.schema.json
+tools/schema/interface_import.schema.json
+tools/schema/pipeline.schema.json
+tools/schema/schema-manifest.json
