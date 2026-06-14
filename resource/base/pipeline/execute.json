@@ -1,0 +1,7 @@
+{
+    "ExecuteEntry": {
+        "recognition": "DirectHit",
+        "action": "Custom",
+        "custom_action": "ExecuteTimeline"
+    }
+}
