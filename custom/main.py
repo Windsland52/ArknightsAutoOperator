@@ -105,14 +105,16 @@ def main() -> int:
 
     out = paths["debug"] / "smoke.png"
     try:
-        import cv2
         import numpy as np
+        from PIL import Image
 
         if isinstance(image, np.ndarray):
-            cv2.imwrite(str(out), image)
+            # maafw 返回 BGR（OpenCV 约定）；PIL 要 RGB → 反转通道。
+            rgb = np.ascontiguousarray(image[..., ::-1])
+            Image.fromarray(rgb).save(str(out))
             logger.info("saved %s shape=%s dtype=%s", out, image.shape, image.dtype)
         else:
-            logger.warning("image is not ndarray (type=%s); adjust save path", type(image).__name__)
+            logger.warning("image is not ndarray (type=%s)", type(image).__name__)
     except Exception as e:  # noqa: BLE001
         logger.exception("save failed: %r", e)
 
