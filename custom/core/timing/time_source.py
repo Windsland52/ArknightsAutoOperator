@@ -78,7 +78,7 @@ class TimeSource:
 
         if lf_measured is None:
             self.previous_frame = -1
-            self._prev_measured = -1
+            # 不重置 _prev_measured：保留上次有效值，以便 wrap 瞬间的短暂 None 后仍能检测周期
             self._stuck_lf = None
             if self.last_detect_time and now - self.last_detect_time > self.reset_timeout:
                 if self.cycle_counter or self.cycle_base_frames or self.timer_offset:
