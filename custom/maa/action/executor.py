@@ -54,6 +54,9 @@ class ExecuteTimeline(CustomAction):
     def run(self, context: Context, argv: CustomAction.RunArg) -> CustomAction.RunResult:
         try:
             params = json.loads(argv.custom_action_param) if argv.custom_action_param else {}
+            # MAA 可能双重 JSON 编码 custom_action_param
+            if isinstance(params, str):
+                params = json.loads(params)
             return self._execute(context, params)
         except Exception:
             logger.exception("ExecuteTimeline 异常")
