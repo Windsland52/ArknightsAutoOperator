@@ -29,8 +29,8 @@ _GITHUB = "https://raw.githubusercontent.com/MaaAssistantArknights/MaaAssistantA
 _BATTLE_DATA_REMOTE = f"{_GITHUB}/resource/battle_data.json"
 _TILE_POS_API = "https://api.github.com/repos/MaaAssistantArknights/MaaAssistantArknights/contents/resource/Arknights-Tile-Pos"
 
-# PRTS Wiki 头像
-_AVATAR_URL = "https://media.prts.wiki/thumb.php?f=avg_{char_id}.png&w=120"
+# 头像来源待定（prts-plus 预置本地，MAA 不用头像匹配）
+# TODO: 确定头像获取方式后实现下载
 
 
 def _download(url: str, dest: Path) -> bool:
@@ -166,44 +166,12 @@ def sync_avatars(
     operator_names: list[str] | None = None,
     all_avatars: bool = False,
 ) -> None:
-    """下载干员头像。
+    """下载干员头像（TODO: 头像来源待确定）。
 
-    Args:
-        operator_names: 指定干员名列表。
-        all_avatars: 下载全部头像。
+    prts-plus 预置本地头像文件；MaaAssistantArknights 不用头像匹配。
+    当前无可靠的远程头像源。确定后在此实现下载逻辑。
     """
-    data_dir = project_root() / "data"
-    avatar_dir = project_root() / "resource" / "image" / "avatar"
-    avatar_dir.mkdir(parents=True, exist_ok=True)
-
-    mapping_path = data_dir / "operator_mapping.json"
-    if not mapping_path.exists():
-        logger.error("operator_mapping.json 不存在，请先同步干员")
-        return
-    mapping: dict[str, str] = json.loads(mapping_path.read_text(encoding="utf-8"))
-
-    if all_avatars:
-        targets = list(mapping.items())
-    elif operator_names:
-        targets = [(n, mapping[n]) for n in operator_names if n in mapping]
-    else:
-        logger.info("未指定头像范围（用 --all-avatars 或 --avatars '名1,名2'）")
-        return
-
-    total = len(targets)
-    downloaded = 0
-    for i, (_name, char_id) in enumerate(targets):
-        out_path = avatar_dir / f"{char_id}.png"
-        if out_path.exists():
-            continue
-        url = _AVATAR_URL.format(char_id=char_id)
-        if _download(url, out_path):
-            downloaded += 1
-        if (i + 1) % 100 == 0:
-            logger.info("头像进度: %d/%d (新下载 %d)", i + 1, total, downloaded)
-
-    existing = len(list(avatar_dir.glob("*.png")))
-    logger.info("头像完成: 新下载 %d, 总计 %d 张", downloaded, existing)
+    logger.warning("头像下载尚未实现（来源待确定）。prts-plus 用本地预置文件。")
 
 
 # --- 统一入口 ---
