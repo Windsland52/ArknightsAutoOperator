@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # MAA 常量（1280×720）
 _FLAG_ROI = [33, 600, 1245, 18]
 _FLAG_THRESHOLD = 0.65
-_AVATAR_OFFSET = [7, 32, 60, 60]  # BattleOperAvatar rectMove
+_AVATAR_OFFSET = [-35, 39, 45, 46]  # BattleOperAvatar rectMove
 _NAME_ROI = [3, 195, 192, 35]  # BattleOperName OCR roi
 _DETAIL_WAIT = 0.5  # 等详情页打开
 
