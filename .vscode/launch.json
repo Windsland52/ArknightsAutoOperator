@@ -2,21 +2,11 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "AKOP: smoke (Win32)",
+            "name": "AKOP: smoke",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/custom/main.py",
-            "args": ["--mode", "win32"],
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal",
-            "justMyCode": false
-        },
-        {
-            "name": "AKOP: smoke (ADB)",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/custom/main.py",
-            "args": ["--mode", "adb"],
+            "args": [],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "justMyCode": false

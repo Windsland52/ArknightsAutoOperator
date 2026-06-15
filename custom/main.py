@@ -1,10 +1,9 @@
 """Milestone-1 smoke: in-process MAA wiring + screencap.
 
 Run after `uv sync`:
-    uv run python custom/main.py --mode win32        # PC client (Arknights.exe) / emulator window
-    uv run python custom/main.py --mode adb          # Android emulator via ADB
+    uv run python custom/main.py
 
-Validates: maafw install, Toolkit discovery, Win32/ADB controller connect, screencap.
+Validates: maafw install, Toolkit discovery, Win32 controller connect, screencap.
 """
 
 from __future__ import annotations
@@ -41,7 +40,7 @@ def pick_win32_controller():  # type: ignore[no-untyped-def]
     for w in windows:
         name = getattr(w, "window_name", "") or ""
         cls = getattr(w, "class_name", "") or ""
-        # Win32 只认 PC 官方客户端（明日方舟 / UnityWndClass）；模拟器走 ADB 路径。
+        # Win32 只认 PC 官方客户端（明日方舟 / UnityWndClass）。
         if "明日方舟" in name or "Unity" in cls:
             target = w
             logger.info("matched window: name=%r class=%r hwnd=%s", name, cls, w.hwnd)
@@ -59,28 +58,8 @@ def pick_win32_controller():  # type: ignore[no-untyped-def]
     )
 
 
-def pick_adb_controller():  # type: ignore[no-untyped-def]
-    from maa.controller import AdbController
-    from maa.toolkit import Toolkit
-
-    devices = Toolkit.find_adb_devices()
-    if not devices:
-        logger.warning("no adb devices found")
-        return None
-    d = devices[0]
-    logger.info("using adb device: name=%r address=%r", getattr(d, "name", ""), d.address)
-    return AdbController(
-        adb_path=d.adb_path,
-        address=d.address,
-        screencap_methods=d.screencap_methods,
-        input_methods=d.input_methods,
-        config=d.config,
-    )
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="AKOP milestone-1 MAA wiring smoke")
-    parser.add_argument("--mode", choices=["win32", "adb"], default="win32")
     parser.add_argument("--debug", action="store_true", help="verbose logging")
     args = parser.parse_args()
 
@@ -92,12 +71,12 @@ def main() -> int:
     Toolkit.init_option(str(paths["debug"]))
     logger.info("project root: %s", paths["root"])
 
-    controller = pick_win32_controller() if args.mode == "win32" else pick_adb_controller()
+    controller = pick_win32_controller()
     if controller is None:
-        logger.error("no controller available (mode=%s)", args.mode)
+        logger.error("no controller available")
         return 2
 
-    logger.info("connecting controller (mode=%s)...", args.mode)
+    logger.info("connecting controller...")
     controller.post_connection().wait()
     logger.info("connected")
 

@@ -52,12 +52,6 @@ MINIMUM_WAIT_MS = 20
 MOUSE_WAIT_MS = 100
 GENERAL_WAIT_MS = 300
 
-# PC frame-step timing (AFA hotkey_actions.ahk): resume then pause for ~1 frame.
-# Intentionally < (1000/30)=33.3ms to avoid advancing two frames under jitter.
-PC_STEP_1X_MS = 30  # 1 logical frame at 1x speed
-PC_STEP_BULLET_MS = 165  # 1 logical frame at 0.2x (bullet-time) speed
-PC_KEY_DELAY_MS = 50
-
 # --- Game native keybindings (PC client, Arknights.exe) ---
 VK_SPACE = 0x20  # pause
 VK_ESCAPE = 0x1B  # menu / resume

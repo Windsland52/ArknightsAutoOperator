@@ -5,14 +5,16 @@ pipeline 节点：
      "custom_action_param": {"timeline": [...], "calibration": "...", "map_code": "1-7"}}
 
 内部流程（每个 action）：
-1. 读费用条时间 → 逼近目标帧
-2. 进入子弹时间（选中干员/暂停）
-3. 逐帧步进到精确帧（PC: ESC→precise_sleep→Space / 模拟器: Esc+click steptiny）
-4. 执行 deploy/skill/retreat
+1. 读费用条累计帧 → 逼近目标帧（运行中等待）
+2. 到达 bullet 阈值 → 暂停
+3. 逐帧步进到精确帧
+4. 暂停下执行 deploy/skill/retreat
+5. 保持暂停，进入下一个动作（pause invariant）
 
-平台感知：
-- Win32（PC 客户端）：键盘 E 技能 / Q 撤退 / 定时过帧（AFA 路线）
-- ADB（模拟器）：鼠标比例技能/撤退 / steptiny Esc+点击（prts-plus 路线）
+平台：Win32（PC 客户端）。
+- 暂停/步进/技能/撤退全部经 AFA 热键（见 custom.core.afa_hotkey）。
+- 部署拖拽 + 朝向用 MAA post_touch。
+- AFA 需独立常驻运行，游戏窗口须前台。执行器需管理员权限（PostMessage）。
 """
 
 from __future__ import annotations
@@ -26,29 +28,24 @@ from maa.controller import Controller
 from maa.custom_action import CustomAction
 
 from custom import config
+from custom.core import afa_hotkey
 from custom.core.avatar import locate_oper
 from custom.core.battle.action import Action, ActionType, DirectionType
 from custom.core.geometry.convert_pos import convert_position
 from custom.core.geometry.map_loader import load_map
 from custom.core.geometry.view import transform_map_to_view
 from custom.core.timing.calibration import load as load_calibration
-from custom.core.timing.precise_sleep import precise_sleep_ms
 from custom.core.timing.time_source import TimeSource
 
 logger = logging.getLogger(__name__)
 
-# VK codes (PC 客户端原生按键)
-_VK = {
-    "escape": 0x1B,
-    "space": 0x20,
-    "e": 0x45,
-    "q": 0x51,
-    "d": 0x44,
-}
-
 
 class ExecuteTimeline(CustomAction):
     """执行时间轴上所有动作。"""
+
+    # 运行时状态（_execute 中初始化）
+    _paused: bool = False
+    _hwnd: int | None = None
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> CustomAction.RunResult:
         try:
@@ -87,7 +84,15 @@ class ExecuteTimeline(CustomAction):
 
         # 创建 TimeSource（用执行器自己的截图循环驱动）
         time_source = TimeSource(calib)
-        is_pc = self._detect_platform(ctrl)
+
+        # AFA 需要游戏窗口前台 + 暂停状态机
+        self._paused = False
+        self._hwnd = afa_hotkey.find_game_window()
+        if self._hwnd is None:
+            logger.error("未找到「明日方舟」窗口，AFA 热键无法生效")
+            return CustomAction.RunResult(success=False)
+        afa_hotkey.activate(self._hwnd)
+        logger.info("游戏窗口 HWND=%s，已激活（AFA 热键就绪）", self._hwnd)
 
         for i, action in enumerate(actions):
             if context.tasker.stopping:
@@ -95,8 +100,10 @@ class ExecuteTimeline(CustomAction):
                 return CustomAction.RunResult(success=False)
 
             logger.info("[%d/%d] %s", i + 1, len(actions), action)
-            self._perform_action(context, ctrl, action, time_source, is_pc)
+            self._perform_action(context, ctrl, action, time_source)
 
+        # 全部动作执行完，恢复游戏运行
+        self._resume()
         return CustomAction.RunResult(success=True)
 
     def _parse_actions(self, raw: list[dict], map_data: dict) -> list[Action]:
@@ -152,17 +159,14 @@ class ExecuteTimeline(CustomAction):
         """定位干员头像。MAA 方案：检测槽位 → 有缓存 TemplateMatch → 无缓存 点击+OCR+存头像。"""
         return locate_oper(context, ctrl, oper_name)
 
-    def _detect_platform(self, ctrl: Controller) -> bool:
-        """检测是否 PC 客户端（Win32）。"""
-        info = ctrl.info
-        is_win32 = info.get("type") == "win32"
-        logger.info("平台: %s", "PC(Win32)" if is_win32 else "模拟器(ADB)")
-        return is_win32
-
     def _perform_action(
-        self, context: Context, ctrl: Controller, action: Action, ts: TimeSource, is_pc: bool
+        self, context: Context, ctrl: Controller, action: Action, ts: TimeSource
     ) -> None:
-        """执行单个动作：逼近目标帧 → 子弹时间 → 逐帧 → 操作。"""
+        """执行单个动作：逼近目标帧 → 暂停 → 逐帧 → 操作（暂停下）。
+
+        维持 pause invariant：动作执行期间保持暂停，只有逼近阶段才恢复。
+        动作结束时不恢复暂停，留给下一个动作。
+        """
         target_frame = action.target_frame
         bullet_threshold = config.BULLET_THRESHOLD
 
@@ -174,27 +178,28 @@ class ExecuteTimeline(CustomAction):
 
         logger.info("当前帧 %d → 目标帧 %d", current, target_frame)
 
-        # 逼近：当前 + threshold < target → 等待
+        # 逼近：当前 + threshold < target → 恢复运行，等待接近
         if current + bullet_threshold < target_frame:
             logger.debug("距离目标 %d 帧，等待", target_frame - current)
+            self._resume()
             self._wait_until_frames(
                 ctrl, ts, target_frame - bullet_threshold, context_tasker_stopping=lambda: False
             )
 
-        # 进入子弹时间
-        self._enter_bullet_time(ctrl, is_pc)
+        # 到达 bullet 阈值 → 暂停（AFA F 键）
+        self._pause()
         time.sleep(config.GENERAL_WAIT_MS / 1000)
 
         # 逐帧步进到目标
-        self._step_to_frames(ctrl, ts, target_frame, is_pc)
+        self._step_to_frames(ctrl, ts, target_frame)
 
-        # 执行动作
+        # 执行动作（此时游戏已暂停）
         if action.action_type == ActionType.DEPLOY:
-            self._deploy(context, ctrl, action, is_pc)
+            self._deploy(context, ctrl, action)
         elif action.action_type == ActionType.SKILL:
-            self._skill(ctrl, action, is_pc)
+            self._skill(ctrl, action)
         elif action.action_type == ActionType.RETREAT:
-            self._retreat(ctrl, action, is_pc)
+            self._retreat(ctrl, action)
 
     def _read_frames(self, ctrl: Controller, ts: TimeSource) -> int | None:
         """截图 → TimeSource → 累计帧。"""
@@ -218,25 +223,30 @@ class ExecuteTimeline(CustomAction):
                 return
             time.sleep(0.016)
 
-    def _enter_bullet_time(self, ctrl: Controller, is_pc: bool) -> None:
-        """进入子弹时间。PC: Space（暂停后选中干员）。模拟器: 点击最后干员。"""
-        if is_pc:
-            # PC：先确保暂停，然后 Space 进入子弹时间
-            ctrl.post_click_key(_VK["escape"]).wait()
-            precise_sleep_ms(30)
-            ctrl.post_click_key(_VK["space"]).wait()
-        else:
-            # 模拟器：点击最后操作干员位置进入慢速
-            ctrl.post_click(
-                int(config.LAST_OPER_RATIO[0] * 1280), int(config.LAST_OPER_RATIO[1] * 720)
-            ).wait()
-        time.sleep(config.GENERAL_WAIT_MS / 1000)
+    # --- 暂停状态机（经 AFA 热键） ---
+
+    def _pause(self) -> None:
+        """暂停游戏。幂等：已暂停则不发。"""
+        if self._paused:
+            return
+        afa_hotkey.tap_key(afa_hotkey.VK_F)  # AFA: 按下暂停（ESC 脉冲）
+        self._paused = True
+
+    def _resume(self) -> None:
+        """恢复游戏运行。幂等：已运行则不发。"""
+        if not self._paused:
+            return
+        afa_hotkey.tap_key(afa_hotkey.VK_SPACE)  # AFA: 松开暂停（Space 脉冲）
+        self._paused = False
 
     def _step_to_frames(
-        self, ctrl: Controller, ts: TimeSource, target_frame: int, is_pc: bool
+        self, ctrl: Controller, ts: TimeSource, target_frame: int
     ) -> None:
-        """逐帧步进到累计帧 target_frame。"""
-        max_steps = 60
+        """逐帧步进到累计帧 target_frame（游戏须已暂停）。
+
+        发 AFA R 键（Action33ms），AFA 要求光标在游戏客户区内。
+        """
+        max_steps = 90
         for _ in range(max_steps):
             img = ctrl.post_screencap().wait().get()
             lf = ts.update(img)
@@ -245,26 +255,29 @@ class ExecuteTimeline(CustomAction):
             if ts.total_elapsed_frames >= target_frame:
                 logger.debug("到达目标帧 %d", target_frame)
                 return
-            self._step_one_frame(ctrl, is_pc)
+            self._step_one_frame()
             time.sleep(config.GENERAL_WAIT_MS / 1000)
-        logger.warning("逐帧步进超时")
+        logger.warning("逐帧步进超时（目标帧 %d）", target_frame)
 
-    def _step_one_frame(self, ctrl: Controller, is_pc: bool) -> None:
-        """推进 1 帧。PC: ESC→30ms→Space。模拟器: Esc+click steptiny。"""
-        if is_pc:
-            ctrl.post_click_key(_VK["escape"]).wait()
-            precise_sleep_ms(config.PC_STEP_1X_MS)
-            ctrl.post_click_key(_VK["space"]).wait()
-            precise_sleep_ms(config.PC_KEY_DELAY_MS)
-        else:
-            # 模拟器 steptiny: Esc + click center
-            ctrl.post_click_key(_VK["escape"]).wait()
-            time.sleep(0.05)
-            ctrl.post_click(640, 360).wait()
-            time.sleep(0.05)
+    def _step_one_frame(self) -> None:
+        """推进 1 帧（游戏须已暂停）。发 AFA R 键。"""
+        self._ensure_cursor_in_game()
+        afa_hotkey.tap_key(afa_hotkey.VK_R)  # AFA: 前进 33ms
 
-    def _deploy(self, context: Context, ctrl: Controller, action: Action, is_pc: bool) -> None:
-        """部署干员。"""
+    def _ensure_cursor_in_game(self) -> None:
+        """把真实光标移到游戏客户区中心（满足 AFA IsMouseInClient）。"""
+        if self._hwnd is not None:
+            afa_hotkey.move_cursor(self._hwnd, 0.5, 0.5)
+
+    def _move_cursor_to_unit(self, action: Action) -> None:
+        """把真实光标移到干员正面投影位置（W 暂停选中用）。"""
+        if self._hwnd is None or action.view_pos_front is None:
+            self._ensure_cursor_in_game()
+            return
+        afa_hotkey.move_cursor(self._hwnd, action.view_pos_front[0], action.view_pos_front[1])
+
+    def _deploy(self, context: Context, ctrl: Controller, action: Action) -> None:
+        """部署干员（游戏须已暂停）。"""
         if action.view_pos_side is None or action.oper is None:
             logger.error("部署缺少坐标/干员")
             return
@@ -285,25 +298,17 @@ class ExecuteTimeline(CustomAction):
         deploy_x = int(action.view_pos_side[0] * 1280)
         deploy_y = int(action.view_pos_side[1] * 720 + int(config.DEPLOY_DELTA_RATIO * 720))
 
-        if is_pc:
-            # PC: 左键拖拽
-            ctrl.post_touch_down(avatar_x, avatar_y, 0, 1).wait()
-            time.sleep(0.05)
-            ctrl.post_touch_move(deploy_x, deploy_y, 0, 1).wait()
-            time.sleep(0.05)
-            ctrl.post_touch_up(0).wait()
-        else:
-            # 模拟器: 右键拖拽（contact=1）
-            ctrl.post_touch_down(avatar_x, avatar_y, 1, 1).wait()
-            time.sleep(0.1)
-            ctrl.post_touch_move(deploy_x, deploy_y, 1, 1).wait()
-            time.sleep(0.1)
-            ctrl.post_touch_up(1).wait()
+        # 左键拖拽（PostMessage）
+        ctrl.post_touch_down(avatar_x, avatar_y, 0, 1).wait()
+        time.sleep(0.05)
+        ctrl.post_touch_move(deploy_x, deploy_y, 0, 1).wait()
+        time.sleep(0.05)
+        ctrl.post_touch_up(0).wait()
 
         time.sleep(config.GENERAL_WAIT_MS / 1000)
-        self._set_direction(ctrl, action, is_pc)
+        self._set_direction(ctrl, action)
 
-    def _set_direction(self, ctrl: Controller, action: Action, is_pc: bool) -> None:
+    def _set_direction(self, ctrl: Controller, action: Action) -> None:
         """设置朝向。"""
         if action.direction is None or action.direction == DirectionType.NONE:
             return
@@ -337,52 +342,20 @@ class ExecuteTimeline(CustomAction):
         ctrl.post_touch_up(0).wait()
         time.sleep(config.GENERAL_WAIT_MS / 1000)
 
-    def _skill(self, ctrl: Controller, action: Action, is_pc: bool) -> None:
-        """技能。"""
+    def _skill(self, ctrl: Controller, action: Action) -> None:
+        """技能（游戏须已暂停）。光标移到单位 → W 暂停选中 → S 发 E。"""
         logger.info("技能 %s", action.oper)
-        if is_pc:
-            # PC: 点击干员位置 → 按 E
-            if action.view_pos_front:
-                ctrl.post_click(
-                    int(action.view_pos_front[0] * 1280),
-                    int(action.view_pos_front[1] * 720),
-                ).wait()
-                time.sleep(0.05)
-            ctrl.post_click_key(_VK["e"]).wait()
-        else:
-            # 模拟器: 点击干员 → 点击技能按钮比例
-            if action.view_pos_front:
-                ctrl.post_click(
-                    int(action.view_pos_front[0] * 1280),
-                    int(action.view_pos_front[1] * 720),
-                ).wait()
-                time.sleep(0.1)
-            ctrl.post_click(
-                int(config.SKILL_RATIO[0] * 1280),
-                int(config.SKILL_RATIO[1] * 720),
-            ).wait()
+        self._move_cursor_to_unit(action)
+        afa_hotkey.tap_key(afa_hotkey.VK_W)  # 暂停选中
+        time.sleep(config.GENERAL_WAIT_MS / 1000)
+        afa_hotkey.tap_key(afa_hotkey.VK_S)  # 单位技能（发 E）
         time.sleep(config.GENERAL_WAIT_MS / 1000)
 
-    def _retreat(self, ctrl: Controller, action: Action, is_pc: bool) -> None:
-        """撤退。"""
+    def _retreat(self, ctrl: Controller, action: Action) -> None:
+        """撤退（游戏须已暂停）。光标移到单位 → W 暂停选中 → A 发 Q。"""
         logger.info("撤退 %s", action.oper)
-        if is_pc:
-            if action.view_pos_front:
-                ctrl.post_click(
-                    int(action.view_pos_front[0] * 1280),
-                    int(action.view_pos_front[1] * 720),
-                ).wait()
-                time.sleep(0.05)
-            ctrl.post_click_key(_VK["q"]).wait()
-        else:
-            if action.view_pos_front:
-                ctrl.post_click(
-                    int(action.view_pos_front[0] * 1280),
-                    int(action.view_pos_front[1] * 720),
-                ).wait()
-                time.sleep(0.1)
-            ctrl.post_click(
-                int(config.RETREAT_RATIO[0] * 1280),
-                int(config.RETREAT_RATIO[1] * 720),
-            ).wait()
+        self._move_cursor_to_unit(action)
+        afa_hotkey.tap_key(afa_hotkey.VK_W)  # 暂停选中
+        time.sleep(config.GENERAL_WAIT_MS / 1000)
+        afa_hotkey.tap_key(afa_hotkey.VK_A)  # 单位撤退（发 Q）
         time.sleep(config.GENERAL_WAIT_MS / 1000)

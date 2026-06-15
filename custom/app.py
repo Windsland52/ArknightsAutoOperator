@@ -2,7 +2,6 @@
 
 用法：
     uv run python -m custom.app --profile test_30f_1280x720.json
-    uv run python -m custom.app --profile test_30f_1280x720.json --mode adb
 
 启动后：
 - 悬浮窗显示实时帧/计时器
@@ -24,7 +23,6 @@ if _ROOT not in sys.path:
 from PySide6.QtCore import QThread, QTimer  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from custom import config  # noqa: E402
 from custom.core.battle.action import ActionType  # noqa: E402
 from custom.core.timing import calibration  # noqa: E402
 from custom.measure.api_server import ApiServer  # noqa: E402
@@ -56,13 +54,6 @@ except (ImportError, OSError):
         return False
 
 
-# 模拟器 ROI（CostBarRuler 原值）
-_ROI_ADB = {
-    "X1_OFFSET_FROM_RIGHT": config.REF_WIDTH - 1740,
-    "Y1_OFFSET_FROM_BOTTOM": config.REF_HEIGHT - 810,
-    "Y2_OFFSET_FROM_BOTTOM": config.REF_HEIGHT - 817,
-}
-
 # 热键防抖
 _key_states: dict[int, bool] = {_VK_F8: False, _VK_F9: False, _VK_F10: False}
 
@@ -90,33 +81,9 @@ def _connect_win32(Toolkit):
     return ctrl
 
 
-def _connect_adb(Toolkit):
-    from maa.controller import AdbController
-
-    devices = Toolkit.find_adb_devices()
-    if not devices:
-        logger.error("未找到 ADB 设备")
-        return None
-    d = devices[0]
-    logger.info("ADB 设备: %s @ %s", d.name, d.address)
-    ctrl = AdbController(
-        adb_path=d.adb_path,
-        address=d.address,
-        screencap_methods=d.screencap_methods,
-        input_methods=d.input_methods,
-        config=d.config,
-    )
-    ctrl.post_connection().wait()
-    for key, val in _ROI_ADB.items():
-        setattr(config, key, val)
-    logger.info("已切换到模拟器 ROI")
-    return ctrl
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="ArknightsAutoOperator 集成应用")
     parser.add_argument("--profile", required=True, help="校准文件名")
-    parser.add_argument("--mode", choices=["win32", "adb"], default="win32")
     parser.add_argument("--port", type=int, default=2606)
     parser.add_argument("--no-api", action="store_true")
     parser.add_argument("--no-editor", action="store_true")
@@ -133,7 +100,7 @@ def main() -> int:
     data = calibration.load(args.profile)
     logger.info("校准 %s：%d 档 (%s)", args.profile, len(data.profiles), data.detection_mode)
 
-    controller = _connect_adb(Toolkit) if args.mode == "adb" else _connect_win32(Toolkit)
+    controller = _connect_win32(Toolkit)
     if controller is None:
         return 2
 

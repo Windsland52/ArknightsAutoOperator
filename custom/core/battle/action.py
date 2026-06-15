@@ -40,6 +40,7 @@ class Action:
     alias: str | None = None
 
     # 运行时填充
+    target_frame: int = 0  # 目标累计帧（executor 用）
     tile_pos: tuple[int, int] | None = None  # (col, row)
     avatar_pos: tuple[float, float] | None = None  # 屏幕比例 (x, y)
     view_pos_front: tuple[float, float] | None = None

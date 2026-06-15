@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import unicodedata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -46,6 +47,18 @@ def _get_char_id(oper_name: str) -> str:
         return ""
     mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
     return mapping.get(oper_name, "")
+
+
+def _normalize_name(name: str) -> str:
+    """归一化干员名用于匹配（OCR 结果可能与原名有字形差异）。
+
+    - NFKC：上标 ²→2、Ⅲ→III、全角字母数字→半角。
+    - 去除空白。
+    """
+    if not name:
+        return ""
+    name = unicodedata.normalize("NFKC", name)
+    return name.replace(" ", "").replace("　", "")
 
 
 def detect_slots(
@@ -174,14 +187,13 @@ def locate_oper(
         time.sleep(0.3)
 
         if name:
-            # 存头像（从原始 deployment 截图截取，不是详情页）
-            _save_avatar_from_image(image, slot, name)
+            matched = _normalize_name(name) == _normalize_name(oper_name)
+            # 匹配则用原名存（保证 char_id 正确），否则用 OCR 名存（供后续复用）
+            _save_avatar_from_image(image, slot, oper_name if matched else name)
 
-            if name == oper_name:
-                cx = click_x
-                cy = click_y
-                logger.info("找到目标干员 %s 在槽位 %d", oper_name, i)
-                return (cx / w, cy / h)
+            if matched:
+                logger.info("找到目标干员 %s 在槽位 %d（OCR=%s）", oper_name, i, name)
+                return (click_x / w, click_y / h)
 
     logger.error("未找到干员 %s", oper_name)
     return None

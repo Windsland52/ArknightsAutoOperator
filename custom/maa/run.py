@@ -5,7 +5,6 @@
 用法：
     # 前提：进战斗、暂停、选好关卡
     uv run python -m custom.maa.run --profile test_30f_1280x720.json --map 1-7
-    uv run python -m custom.maa.run --profile test_30f_1280x720.json --map 1-7 --mode adb
 
 custom_action_param 里的 timeline 从 JSON 文件加载（--timeline）或命令行指定。
 """
@@ -22,7 +21,6 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from custom import config  # noqa: E402
 from custom.core.timing import calibration  # noqa: E402
 from custom.maa.action.executor import ExecuteTimeline  # noqa: E402
 from custom.timeline.io import load_timeline  # noqa: E402
@@ -31,19 +29,12 @@ from custom.utils.runtime_paths import configure_paths  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-_ROI_ADB = {
-    "X1_OFFSET_FROM_RIGHT": config.REF_WIDTH - 1740,
-    "Y1_OFFSET_FROM_BOTTOM": config.REF_HEIGHT - 810,
-    "Y2_OFFSET_FROM_BOTTOM": config.REF_HEIGHT - 817,
-}
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="执行器测试运行器")
     parser.add_argument("--profile", required=True, help="校准文件名")
     parser.add_argument("--map", required=True, help="关卡代号")
     parser.add_argument("--timeline", required=True, help="时间轴 JSON 文件路径")
-    parser.add_argument("--mode", choices=["win32", "adb"], default="win32")
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
@@ -51,7 +42,6 @@ def main() -> int:
     paths = configure_paths()
 
     from maa.controller import (
-        AdbController,
         MaaWin32InputMethodEnum,
         MaaWin32ScreencapMethodEnum,
         Win32Controller,
@@ -73,37 +63,20 @@ def main() -> int:
     calib = calibration.load(args.profile)
     logger.info("校准: %d 档 profile", len(calib.profiles))
 
-    # 连接控制器
-    if args.mode == "adb":
-        devices = Toolkit.find_adb_devices()
-        if not devices:
-            logger.error("未找到 ADB 设备")
-            return 2
-        d = devices[0]
-        ctrl = AdbController(
-            adb_path=d.adb_path,
-            address=d.address,
-            screencap_methods=d.screencap_methods,
-            input_methods=d.input_methods,
-            config=d.config,
-        )
-        for key, val in _ROI_ADB.items():
-            setattr(config, key, val)
-    else:
-        wins = Toolkit.find_desktop_windows()
-        target = next((w for w in wins if "明日方舟" in (w.window_name or "")), None)
-        if target is None:
-            logger.error("未找到「明日方舟」窗口")
-            return 2
-        ctrl = Win32Controller(
-            target.hwnd,
-            MaaWin32ScreencapMethodEnum.FramePool,
-            MaaWin32InputMethodEnum.PostMessageWithCursorPos,
-            MaaWin32InputMethodEnum.PostMessage,
-        )
+    # 连接控制器（Win32）
+    wins = Toolkit.find_desktop_windows()
+    target = next((w for w in wins if "明日方舟" in (w.window_name or "")), None)
+    if target is None:
+        logger.error("未找到「明日方舟」窗口")
+        return 2
+    ctrl = Win32Controller(
+        target.hwnd,
+        MaaWin32ScreencapMethodEnum.FramePool,
+        MaaWin32InputMethodEnum.PostMessageWithCursorPos,
+        MaaWin32InputMethodEnum.PostMessage,
+    )
     ctrl.post_connection().wait()
-    if args.mode == "win32":
-        ctrl.set_screenshot_target_short_side(720)
+    ctrl.set_screenshot_target_short_side(720)
 
     # 创建 Resource + 注册 custom action
     res = Resource()
