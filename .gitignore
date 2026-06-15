@@ -33,7 +33,7 @@ config/
 
 # Generated game data (run: uv run python -m custom.resources.syncer)
 data/map/
-data/avatar/
+resource/base/image/avatar/
 
 # Reference projects (local clones, not part of this repo)
 reference/

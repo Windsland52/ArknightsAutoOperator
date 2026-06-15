@@ -26,7 +26,12 @@ from maa.controller import Controller
 from maa.custom_action import CustomAction
 
 from custom import config
-from custom.core.avatar import has_avatar, learn_avatar, locate_avatar
+from custom.core.avatar import (
+    detect_slots,
+    has_avatar,
+    learn_avatar_from_slot,
+    locate_avatar,
+)
 from custom.core.battle.action import Action, ActionType, DirectionType
 from custom.core.battle.game_time import GameTime
 from custom.core.geometry.convert_pos import convert_position
@@ -143,16 +148,33 @@ class ExecuteTimeline(CustomAction):
         return actions
 
     def _locate_oper(self, context: Context, oper_name: str) -> tuple[float, float] | None:
-        """定位干员头像。无缓存时尝试学习。"""
-        if has_avatar(oper_name):
-            img = context.tasker.controller.post_screencap().wait().get()
-            return locate_avatar(context, img, oper_name)
+        """定位干员头像。MAA 方案：检测槽位 → TemplateMatch 匹配。
 
-        logger.info("干员 %s 无缓存头像，尝试学习...", oper_name)
+        无缓存头像时：检测槽位 → 从 LAST_OPER_RATIO 最近槽位学习。
+        """
         img = context.tasker.controller.post_screencap().wait().get()
-        if learn_avatar(img, oper_name):
+
+        # 有缓存 → 直接匹配
+        if has_avatar(oper_name):
+            pos = locate_avatar(context, img, oper_name)
+            if pos is not None:
+                return pos
+            logger.warning("干员 %s 有缓存但未匹配，尝试重新学习", oper_name)
+
+        # 无缓存或匹配失败 → 检测槽位 → 从最近槽位学习
+        logger.info("干员 %s 学习头像...", oper_name)
+        slots = detect_slots(context, img)
+        if not slots:
+            logger.error("未检测到干员槽位")
+            return None
+
+        # 选择最右边的槽位（LAST_OPER_RATIO 附近）学习
+        last_slot = slots[-1]
+        if learn_avatar_from_slot(img, last_slot, oper_name):
             logger.info("头像学习成功，重新定位")
             return locate_avatar(context, img, oper_name)
+
+        logger.error("头像学习失败")
         return None
 
     def _detect_platform(self, ctrl: Controller) -> bool:
