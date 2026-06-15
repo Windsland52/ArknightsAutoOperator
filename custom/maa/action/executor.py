@@ -28,7 +28,6 @@ from maa.custom_action import CustomAction
 from custom import config
 from custom.core.avatar import locate_oper
 from custom.core.battle.action import Action, ActionType, DirectionType
-from custom.core.battle.game_time import GameTime
 from custom.core.geometry.convert_pos import convert_position
 from custom.core.geometry.map_loader import load_map
 from custom.core.geometry.view import transform_map_to_view
@@ -101,7 +100,7 @@ class ExecuteTimeline(CustomAction):
         return CustomAction.RunResult(success=True)
 
     def _parse_actions(self, raw: list[dict], map_data: dict) -> list[Action]:
-        """解析 JSON 动作列表 → Action 对象（含投影坐标）。"""
+        """解析 JSON 动作列表 → Action 对象（含投影坐标 + 目标帧）。"""
         h, w = map_data["height"], map_data["width"]
         front = transform_map_to_view(map_data, side=False)
         side = transform_map_to_view(map_data, side=True)
@@ -113,9 +112,11 @@ class ExecuteTimeline(CustomAction):
             if frame is not None:
                 cost_val = frame // config.TICK_MAX_DEFAULT
                 tick_val = frame % config.TICK_MAX_DEFAULT
+                target_frame = int(frame)
             else:
                 cost_val = item.get("cost")
                 tick_val = item.get("tick")
+                target_frame = (cost_val or 0) * config.TICK_MAX_DEFAULT + (tick_val or 0)
 
             a = Action(
                 cost=cost_val,
@@ -130,6 +131,9 @@ class ExecuteTimeline(CustomAction):
             if not a.is_valid():
                 logger.warning("跳过无效动作: %s", a)
                 continue
+
+            # 存储原始帧号用于计时
+            a.target_frame = target_frame
 
             # 棋盘坐标 → 格子 → 投影
             if a.pos:
@@ -159,30 +163,30 @@ class ExecuteTimeline(CustomAction):
         self, context: Context, ctrl: Controller, action: Action, ts: TimeSource, is_pc: bool
     ) -> None:
         """执行单个动作：逼近目标帧 → 子弹时间 → 逐帧 → 操作。"""
-        target = action.get_game_time()
-        bullet_threshold = GameTime(tick=config.BULLET_THRESHOLD)
+        target_frame = action.target_frame
+        bullet_threshold = config.BULLET_THRESHOLD
 
-        # 读当前时间
-        current = self._read_time(ctrl, ts)
+        # 读当前累计帧
+        current = self._read_frames(ctrl, ts)
         if current is None:
             logger.warning("无法读时间，直接执行")
-            current = target
+            current = target_frame
 
-        logger.info("当前 %s → 目标 %s", current, target)
+        logger.info("当前帧 %d → 目标帧 %d", current, target_frame)
 
-        # 逼近：当前 + bullet_threshold < target → 需要逼近
-        if current + bullet_threshold < target:
-            logger.debug("距离目标较远，等待接近")
-            self._wait_until(
-                ctrl, ts, target - bullet_threshold, context_tasker_stopping=lambda: False
+        # 逼近：当前 + threshold < target → 等待
+        if current + bullet_threshold < target_frame:
+            logger.debug("距离目标 %d 帧，等待", target_frame - current)
+            self._wait_until_frames(
+                ctrl, ts, target_frame - bullet_threshold, context_tasker_stopping=lambda: False
             )
 
-        # 进入子弹时间（选中最后操作的干员）
+        # 进入子弹时间
         self._enter_bullet_time(ctrl, is_pc)
         time.sleep(config.GENERAL_WAIT_MS / 1000)
 
         # 逐帧步进到目标
-        self._step_to_target(ctrl, ts, target, is_pc)
+        self._step_to_frames(ctrl, ts, target_frame, is_pc)
 
         # 执行动作
         if action.action_type == ActionType.DEPLOY:
@@ -192,25 +196,25 @@ class ExecuteTimeline(CustomAction):
         elif action.action_type == ActionType.RETREAT:
             self._retreat(ctrl, action, is_pc)
 
-    def _read_time(self, ctrl: Controller, ts: TimeSource) -> GameTime | None:
-        """截图 → tick → TimeSource → GameTime。"""
+    def _read_frames(self, ctrl: Controller, ts: TimeSource) -> int | None:
+        """截图 → TimeSource → 累计帧。"""
         img = ctrl.post_screencap().wait().get()
         lf = ts.update(img)
         if lf is None:
             return None
-        return GameTime(cost=0, tick=lf, time=None)  # 简化：只用周期内 tick
+        return ts.total_elapsed_frames
 
-    def _wait_until(
-        self, ctrl: Controller, ts: TimeSource, target: GameTime, context_tasker_stopping
+    def _wait_until_frames(
+        self, ctrl: Controller, ts: TimeSource, target_frame: int, context_tasker_stopping
     ) -> None:
-        """等待直到费用条时间到达 target。"""
-        deadline = time.time() + 120  # 2 分钟超时
+        """等待直到累计帧到达 target_frame。"""
+        deadline = time.time() + 120
         while time.time() < deadline:
             if context_tasker_stopping():
                 return
             img = ctrl.post_screencap().wait().get()
             lf = ts.update(img)
-            if lf is not None and GameTime(tick=lf) >= target:
+            if lf is not None and ts.total_elapsed_frames >= target_frame:
                 return
             time.sleep(0.016)
 
@@ -228,18 +232,18 @@ class ExecuteTimeline(CustomAction):
             ).wait()
         time.sleep(config.GENERAL_WAIT_MS / 1000)
 
-    def _step_to_target(
-        self, ctrl: Controller, ts: TimeSource, target: GameTime, is_pc: bool
+    def _step_to_frames(
+        self, ctrl: Controller, ts: TimeSource, target_frame: int, is_pc: bool
     ) -> None:
-        """逐帧步进到精确目标帧。"""
+        """逐帧步进到累计帧 target_frame。"""
         max_steps = 60
         for _ in range(max_steps):
             img = ctrl.post_screencap().wait().get()
             lf = ts.update(img)
             if lf is None:
                 break
-            if GameTime(tick=lf) >= target:
-                logger.debug("到达目标帧 %d", lf)
+            if ts.total_elapsed_frames >= target_frame:
+                logger.debug("到达目标帧 %d", target_frame)
                 return
             self._step_one_frame(ctrl, is_pc)
             time.sleep(config.GENERAL_WAIT_MS / 1000)
