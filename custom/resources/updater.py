@@ -1,12 +1,12 @@
 """软件 + 资源更新检查。
 
 用法（CLI）：
-    uv run python -m custom.update --check      # 检查软件更新
-    uv run python -m custom.update --resources  # 更新资源
-    uv run python -m custom.update --all        # 全部
+    uv run python -m custom.resources.updater --check      # 检查软件更新
+    uv run python -m custom.resources.updater --resources  # 更新资源
+    uv run python -m custom.resources.updater --all        # 全部
 
 用法（代码，从 UI 调用）：
-    from custom.update import UpdateChecker
+    from custom.resources.updater import UpdateChecker
     checker = UpdateChecker()
     has_update, version = checker.check_software()
     checker.update_resources(progress_cb=lambda p: ...)

@@ -9,8 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from custom.core.battle.game_time import GameTime
-
 
 class ActionType(Enum):
     DEPLOY = "部署"
@@ -45,10 +43,6 @@ class Action:
     avatar_pos: tuple[float, float] | None = None  # 屏幕比例 (x, y)
     view_pos_front: tuple[float, float] | None = None
     view_pos_side: tuple[float, float] | None = None
-
-    def get_game_time(self):
-        """返回此动作的目标游戏时间。"""
-        return GameTime(cost=self.cost, tick=self.tick, time=self.time)
 
     def is_valid(self) -> bool:
         """校验动作是否完整。"""
