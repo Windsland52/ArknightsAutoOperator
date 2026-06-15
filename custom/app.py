@@ -45,7 +45,7 @@ _VK_F10 = 0x79
 try:
     import ctypes
 
-    _user32 = ctypes.windll.user32
+    _user32 = ctypes.windll.user32  # type: ignore[attr-defined] # pyright: ignore[reportAttributeAccessIssue]
 
     def _key_pressed(vk: int) -> bool:
         return bool(_user32.GetAsyncKeyState(vk) & 0x8000)

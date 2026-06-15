@@ -14,7 +14,7 @@ import time
 _is_windows = sys.platform == "win32"
 
 if _is_windows:
-    _kernel32 = ctypes.windll.kernel32
+    _kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined] # pyright: ignore[reportAttributeAccessIssue]
     _qpc = _kernel32.QueryPerformanceCounter
     _qpf = _kernel32.QueryPerformanceFrequency
     _qpc.restype = wintypes.BOOL
