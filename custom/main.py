@@ -54,7 +54,7 @@ def pick_win32_controller():  # type: ignore[no-untyped-def]
     return Win32Controller(
         hWnd=target.hwnd,
         screencap_method=MaaWin32ScreencapMethodEnum.FramePool,
-        mouse_method=MaaWin32InputMethodEnum.PostMessage,
+        mouse_method=MaaWin32InputMethodEnum.PostMessageWithCursorPos,
         keyboard_method=MaaWin32InputMethodEnum.PostMessage,
     )
 

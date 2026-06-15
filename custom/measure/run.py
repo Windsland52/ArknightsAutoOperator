@@ -57,7 +57,7 @@ def _connect_win32(Toolkit):
     ctrl = Win32Controller(
         target.hwnd,
         MaaWin32ScreencapMethodEnum.FramePool,
-        MaaWin32InputMethodEnum.PostMessage,
+        MaaWin32InputMethodEnum.PostMessageWithCursorPos,
         MaaWin32InputMethodEnum.PostMessage,
     )
     ctrl.post_connection().wait()

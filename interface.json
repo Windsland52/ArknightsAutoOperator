@@ -15,7 +15,7 @@
                 "window_regex": "明日方舟",
                 "class_regex": "UnityWndClass",
                 "screencap": "FramePool",
-                "mouse": "PostMessage",
+                "mouse": "PostMessageWithCursorPos",
                 "keyboard": "PostMessage"
             },
             "display_short_side": 720
