@@ -197,7 +197,6 @@ def _ocr_oper_name(context: Context, detail_img: np.ndarray) -> str | None:
                 "recognition": "OCR",
                 "roi": _NAME_ROI,
                 "threshold": 0.3,
-                "order_by": "Horizontal",
             }
         },
     )
@@ -205,22 +204,17 @@ def _ocr_oper_name(context: Context, detail_img: np.ndarray) -> str | None:
     if not reco or not reco.hit:
         return None
 
-    # 取最高分结果
-    detail = getattr(reco, "raw_detail", None)
-
-    # OCR 结果的文字在 raw_detail 里
-    if detail and isinstance(detail, dict):
-        text = detail.get("text", "")
+    # OCR 文字在 result.text 里（OCRResult 继承 BoxAndScoreResult + text）
+    best = reco.best_result
+    if best is not None:
+        text = getattr(best, "text", "")
         if text:
             return text.strip()
 
-    # 尝试从 all_results 获取
-    for result in reco.all_results if hasattr(reco, "all_results") else []:
-        detail_r = getattr(result, "detail", None) or getattr(result, "raw_detail", None)
-        if detail_r and isinstance(detail_r, dict):
-            text = detail_r.get("text", "")
-            if text:
-                return text.strip()
+    for result in reco.all_results:
+        text = getattr(result, "text", "")
+        if text:
+            return text.strip()
 
     return None
 
