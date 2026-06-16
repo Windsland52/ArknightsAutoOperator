@@ -19,12 +19,6 @@
                 "keyboard": "PostMessage"
             },
             "display_short_side": 720
-        },
-        {
-            "name": "Android",
-            "label": "安卓 / 模拟器 (ADB)",
-            "type": "Adb",
-            "display_short_side": 720
         }
     ],
     "resource": [
@@ -34,5 +28,19 @@
             "path": ["./resource/base"]
         }
     ],
-    "import": ["./tasks/farm.json"]
+    "task": [
+        // {
+        //     "name": "Calibrate",
+        //     "label": "费用条校准",
+        //     "entry": "Calibrate.Start",
+        //     "description": "刻度尺工具：校准费用条帧检测，产出 pixel_map（先行通过 custom.measure.run 使用）"
+        // },
+        {
+            "name": "FarmStage",
+            "label": "自动刷图",
+            "entry": "Farm",
+            "description": "关卡导航→ExecuteTimeline 帧级执行→结算→循环刷图"
+        }
+    ],
+    "option": {}
 }
