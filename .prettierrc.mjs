@@ -18,7 +18,7 @@ export default {
                 '*.json'
             ],
             options: {
-                parser: 'jsonc',
+                parser: 'json',
                 tabWidth: 4
             }
         },
@@ -27,7 +27,7 @@ export default {
                 '*.jsonc'
             ],
             options: {
-                parser: 'jsonc',
+                parser: 'json',
                 tabWidth: 4
             }
         }
