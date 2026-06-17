@@ -15,7 +15,6 @@ venv/
 # Build / packaging
 dist/
 build/
-*.spec
 
 # Runtime output
 debug/
