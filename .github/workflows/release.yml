@@ -25,8 +25,29 @@ jobs:
             - run: pnpm install --frozen-lockfile
             - run: pnpm check
             - run: pnpm check:py
+            - name: Disable Windows Defender realtime monitoring
+              shell: powershell
+              run: |
+                  # PyInstaller 写入 exe 时 Defender 实时扫描会改动 PKG archive，
+                  # 导致产出的 exe "Could not load embedded PKG archive"。打包前关掉。
+                  Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+                  Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE" -ErrorAction SilentlyContinue
+                  Write-Host "Defender realtime monitoring disabled for build"
             - name: Build (PyInstaller)
               run: uv run pyinstaller aao.spec --noconfirm
+            - name: Smoke test packaged exe
+              shell: bash
+              run: |
+                  # 打包后立即 offscreen 跑，验证 PKG archive 能加载（CI 自检，避免产出损坏的 exe 还发版）
+                  export QT_QPA_PLATFORM=offscreen
+                  timeout 20 ./dist/aao.app/aao.app.exe --no-api > smoke.log 2>&1 || true
+                  if grep -q "Could not load PyInstaller" smoke.log; then
+                    echo "[ERR] packaged exe failed to load PKG archive"
+                    cat smoke.log
+                    exit 1
+                  fi
+                  echo "[OK] packaged exe loads PKG archive"
+                  head -5 smoke.log
             - name: Download AFA (ArknightsFrameAssistant)
               shell: bash
               run: |
