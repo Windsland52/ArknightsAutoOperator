@@ -27,6 +27,18 @@ jobs:
             - run: pnpm check:py
             - name: Build (PyInstaller)
               run: uv run pyinstaller aao.spec --noconfirm
+            - name: Download AFA (ArknightsFrameAssistant)
+              shell: bash
+              run: |
+                  mkdir -p dist/aao.app/afa
+                  # AFA 是 GPL-3.0（CloudTracey/arknights-frame-assistant），凹图热键依赖。
+                  # 查最新 release tag，下对应 AFA.exe + LICENSE（满足 GPL 分发要求）。
+                  repo="CloudTracey/arknights-frame-assistant"
+                  tag="$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
+                  echo "AFA latest tag: $tag"
+                  curl -fsSL "https://github.com/$repo/releases/download/$tag/AFA.exe" -o dist/aao.app/afa/AFA.exe
+                  curl -fsSL "https://raw.githubusercontent.com/$repo/$tag/LICENSE" -o dist/aao.app/afa/LICENSE || echo "[WARN] AFA LICENSE 未取到"
+                  ls -la dist/aao.app/afa/
             - name: Convert logo.png to ico
               shell: bash
               run: uv run python -c "from PIL import Image; Image.open('logo.png').save('logo.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"

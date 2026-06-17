@@ -62,9 +62,12 @@ loguru 双 sink：
 - [loguru](https://github.com/Delgan/loguru) — 日志
 - [numpy](https://numpy.org/) / [websockets](https://websockets.readthedocs.io/) / [Pillow](https://python-pillow.org/) / [json5](https://github.com/dpranke/pyjson5)
 
+### 捆绑组件
+
+- [**ArknightsFrameAssistant (AFA)**](https://github.com/CloudTracey/arknights-frame-assistant)（GPL-3.0）— 凹图的暂停/步进/技能/撤退依赖 AFA 的全局热键。**发版包自带 AFA.exe**（从上游 release 下载），启动时自动拉起。AFA 源码与许可见上游仓库；本仓库不持有其版权，仅作分发。
+
 ### 参考项目
 
 - [MaaAssistantArknights](https://github.com/MaaAssistantArknights/MaaAssistantArknights) — 地图数据（`Arknights-Tile-Pos`，运行时同步）+ 粗流程参照
 - [ArknightsCostBarRuler](https://github.com/ZeroAd-06/ArknightsCostBarRuler) — 费用条计时 / 悬浮窗 / 打轴对轴（测量层、校准、tick 检测来源）
 - [prts-plus](https://github.com/jue-ce-zhe/prts-plus) — 帧级自动操作的执行器算法（action / 投影 / 配置）
-- [ArknightsFrameAssistant](https://github.com/CloudTracey/arknights-frame-assistant) — PC 端帧操、AFA 热键输入模型

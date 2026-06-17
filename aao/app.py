@@ -393,6 +393,10 @@ def main() -> int:
     _ensure_admin()
     # 先 configure_paths 让 settings_page 能读到 config/settings.json
     configure_paths()
+    # 确保 AFA 在运行（凹图热键依赖；没在则拉起自带 AFA.exe）
+    from aao.core.afa import ensure_afa
+
+    ensure_afa()
     from aao.ui.settings_page import load_settings
 
     saved = load_settings()
