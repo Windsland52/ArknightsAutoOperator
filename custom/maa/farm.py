@@ -23,6 +23,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from custom.core.timing import calibration  # noqa: E402
+from custom.maa.reco.click_stage import get_attempt_count, reset_attempt_count  # noqa: E402
 from custom.maa.registry import register_all  # noqa: E402
 from custom.utils.jsonc import load as load_jsonc  # noqa: E402
 from custom.utils.logger import setup_logging  # noqa: E402
@@ -30,8 +31,8 @@ from custom.utils.runtime_paths import configure_paths  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-# 每轮估时（秒），用于 max-retries 超时估算
-_EST_SECONDS_PER_ROUND = 120
+# 次数监控线程的轮询间隔（秒）
+_POLL_INTERVAL = 2.0
 
 
 def main() -> int:
@@ -48,7 +49,10 @@ def main() -> int:
         help="难度：normal=普通 | sand=沙盘推演",
     )
     parser.add_argument(
-        "--max-retries", type=int, default=50, help="最大重试次数（0=无限，靠 Ctrl+C 停）"
+        "--max-retries",
+        type=int,
+        default=50,
+        help="最大凹图次数（0=无限，靠 Ctrl+C 停）。按实际尝试计数，不再用估时",
     )
     parser.add_argument(
         "--profile", default=None, help="校准文件名（可选，默认 config.DEFAULT_CALIBRATION）"
@@ -72,6 +76,7 @@ def main() -> int:
 
     if args.profile:
         calibration.load(args.profile)  # 校验可加载
+    reset_attempt_count()  # 每次运行从 0 计数
     logger.info("时间轴: %s（map_code 从文件读取）", args.timeline)
 
     wins = Toolkit.find_desktop_windows()
@@ -115,23 +120,29 @@ def main() -> int:
     pipeline["Farm"]["anchor"] = {"Farm@SwitchDifficulty": anchor_target}
     logger.info("难度：%s", "沙盘推演" if args.difficulty == "sand" else "普通")
 
-    # max-retries 超时定时器（到点 post_stop）
+    # max-retries 次数监控线程：累计凹图尝试达上限则 post_stop
+    # 用 > 而非 >=：count 在 ClickStage 识别成功时自增（约每轮一次），
+    # 故 count > max_retries 意味着已发起 max_retries 次完整尝试、第 N+1 次刚开始，此时停。
     if args.max_retries:
-        deadline = args.max_retries * _EST_SECONDS_PER_ROUND
 
-        def _timeout_stop() -> None:
-            time.sleep(deadline)
-            if not tasker.stopping:
-                logger.warning("已达 max-retries %d（≈%ds），停止", args.max_retries, deadline)
-                tasker.post_stop()
+        def _count_stop() -> None:
+            while not tasker.stopping:
+                time.sleep(_POLL_INTERVAL)
+                if get_attempt_count() > args.max_retries:
+                    if not tasker.stopping:
+                        logger.warning(
+                            "已达 max-retries %d 次（实际 %d 次），停止",
+                            args.max_retries,
+                            get_attempt_count(),
+                        )
+                        tasker.post_stop()
+                    return
 
-        threading.Thread(target=_timeout_stop, daemon=True).start()
+        threading.Thread(target=_count_stop, daemon=True).start()
 
     logger.info(
         "开始凹图%s。请在关卡列表页等待...",
-        f"（最多 {args.max_retries} 次，≈{args.max_retries * _EST_SECONDS_PER_ROUND}s）"
-        if args.max_retries
-        else "（无限，Ctrl+C 停）",
+        f"（最多 {args.max_retries} 次凹图）" if args.max_retries else "（无限，Ctrl+C 停）",
     )
 
     t_start = time.time()

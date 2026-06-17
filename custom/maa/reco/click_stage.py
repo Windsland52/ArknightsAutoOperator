@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from pathlib import Path
 
 from maa.context import Context
@@ -19,6 +20,41 @@ from custom.utils.runtime_paths import project_root
 logger = logging.getLogger(__name__)
 
 _TIMELINE_DIR = project_root() / "config" / "timelines"
+
+# —— 凹图轮次计数 ——
+# ClickStage 每轮循环进入一次 ≈ 一次凹图尝试。Farm 用 JumpBack 反复跳回
+# ClickStage，同一轮里识别失败会重试，故用时间间隔去重避免重复计数。
+_MIN_ATTEMPT_INTERVAL = 5.0  # 秒：距上次计数不足此值则不计数
+_attempt_count = 0
+_last_attempt_time = 0.0  # monotonic，0 表示尚未计过
+
+
+def get_attempt_count() -> int:
+    """当前累计的有效凹图尝试次数（供外部读取，如 max-retries 判定）。"""
+    return _attempt_count
+
+
+def reset_attempt_count() -> None:
+    """重置计数（新一轮 farm 运行前调用）。"""
+    global _attempt_count, _last_attempt_time
+    _attempt_count = 0
+    _last_attempt_time = 0.0
+
+
+def _maybe_count_attempt() -> None:
+    """进入 ClickStage 即记一次尝试；距上次不足 _MIN_ATTEMPT_INTERVAL 则跳过。"""
+    global _attempt_count, _last_attempt_time
+    now = time.monotonic()
+    if _last_attempt_time and (now - _last_attempt_time) < _MIN_ATTEMPT_INTERVAL:
+        logger.debug(
+            "跳过凹图计数（距上次 %.1fs < %.0fs）",
+            now - _last_attempt_time,
+            _MIN_ATTEMPT_INTERVAL,
+        )
+        return
+    _attempt_count += 1
+    _last_attempt_time = now
+    logger.info("▶ 第 %d 次凹图尝试", _attempt_count)
 
 
 def _resolve_timeline_path(timeline_path: str) -> Path:
@@ -105,4 +141,5 @@ class ClickStageRecognition(CustomRecognition):
         if not box:
             return None
         logger.info("识别到关卡 %s at %s", stage_text, box)
+        _maybe_count_attempt()
         return box
