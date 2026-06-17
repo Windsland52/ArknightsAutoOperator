@@ -152,7 +152,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,  # UPX 压 PyInstaller bootloader 会致 PKG archive 加载失败
     upx_exclude=[],
     name="aao.app",
 )
