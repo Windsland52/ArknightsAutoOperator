@@ -79,8 +79,6 @@ except (ImportError, OSError):
         return False
 
 
-
-
 # 侧栏页索引（与 _build_ui addWidget 顺序一致）
 _PAGE_FARM = 0
 _PAGE_EDITOR = 1
@@ -120,9 +118,7 @@ class MainWindow(QMainWindow):
         if controller is not None and calibration_data is not None:
             self.overlay = OverlayWindow()
             self.overlay.show()
-            self.worker = MeasurementWorker(
-                controller, calibration_data, profile_name=profile_name
-            )
+            self.worker = MeasurementWorker(controller, calibration_data, profile_name=profile_name)
             self.worker_thread = QThread()
             self.worker.moveToThread(self.worker_thread)
             self.worker_thread.started.connect(self.worker.run)

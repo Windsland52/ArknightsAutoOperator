@@ -23,9 +23,7 @@ from loguru import logger as _loguru_logger
 # 用户显示格式（控制台 + UI）：只消息，去来源
 _CONSOLE_FORMAT = "{message}"
 # 文件格式：完整含来源
-_FILE_FORMAT = (
-    "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} | {message}"
-)
+_FILE_FORMAT = "{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} | {message}"
 
 _DEFAULT_LOG_DIR = "debug/aao"
 
@@ -136,4 +134,3 @@ def add_qt_sink(callback: Callable[[str], None], level: str = "INFO") -> Any:
 
 
 __all__ = ["setup_logging", "add_qt_sink", "logger"]
-

@@ -100,9 +100,7 @@ class FarmWorker(QObject):
         exec_param: dict = {"timeline_path": self._timeline_path}
         if self._profile:
             exec_param["calibration"] = self._profile
-        pipeline["Farm@Execute"]["custom_action_param"] = json.dumps(
-            exec_param, ensure_ascii=False
-        )
+        pipeline["Farm@Execute"]["custom_action_param"] = json.dumps(exec_param, ensure_ascii=False)
 
         # 难度分支
         if self._difficulty == "sand":

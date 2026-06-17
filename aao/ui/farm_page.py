@@ -288,4 +288,3 @@ class FarmPage(QWidget):
     def set_busy(self, busy: bool) -> None:
         """打轴侧运行时禁用本页开始按钮。"""
         self.btn_start.setEnabled(not busy)
-

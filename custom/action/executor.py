@@ -388,9 +388,9 @@ class ExecuteTimeline(CustomAction):
     def _set_speed(self, context: Context, speed: int) -> None:
         """设游戏倍速（1 或 2）。幂等：已是目标值则不调。
 
-        速度按钮的识别/点击由 pipeline 节点 Speed2x / Speed1x 完成
-       （TemplateMatch 速度按钮图标 + Click，roi/template 在 execute.json 填）。
-        context.run_task 运行该节点。点一次切换，靠 self._speed 记当前状态。
+         速度按钮的识别/点击由 pipeline 节点 Speed2x / Speed1x 完成
+        （TemplateMatch 速度按钮图标 + Click，roi/template 在 execute.json 填）。
+         context.run_task 运行该节点。点一次切换，靠 self._speed 记当前状态。
         """
         if speed == self._speed:
             return

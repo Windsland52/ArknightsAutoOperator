@@ -136,8 +136,14 @@ class TimelineCanvas(QGraphicsView):
         # 轨道背景 + 标签
         for at, idx in _TRACKS.items():
             y = _TOP + idx * _TRACK_H
-            rect = self._scene.addRect(0, y, _LEFT_PAD + self._max_frame * _PX_PER_FRAME, _TRACK_H,
-                                       QPen(QColor("#333")), QBrush(QColor("#1e1e1e")))
+            rect = self._scene.addRect(
+                0,
+                y,
+                _LEFT_PAD + self._max_frame * _PX_PER_FRAME,
+                _TRACK_H,
+                QPen(QColor("#333")),
+                QBrush(QColor("#1e1e1e")),
+            )
             rect.setZValue(-2)
             lbl = self._scene.addText(at.value, QFont("Consolas", 9))
             lbl.setPos(4, y + 6)

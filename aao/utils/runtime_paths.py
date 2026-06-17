@@ -69,4 +69,3 @@ def configure_paths() -> dict[str, Path]:
     if os.getcwd() != str(root):
         os.chdir(root)
     return paths
-

@@ -337,9 +337,7 @@ class SettingsPage(QWidget):
         s["window_name"] = w.window_name
         s["window_class"] = w.class_name
         save_settings(s)
-        self.lbl_win_status.setText(
-            f"已设为默认: {w.window_name}（重启生效）"
-        )
+        self.lbl_win_status.setText(f"已设为默认: {w.window_name}（重启生效）")
         self.settings_changed.emit()
         self.window_configured.emit()
         self._refresh_windows()  # 刷新★标记
