@@ -40,7 +40,7 @@ jobs:
             - name: Stage external resources
               shell: bash
               run: |
-                  cp -r resource data config dist/aao.app/
+                  cp -r resource data examples dist/aao.app/
             - name: Package
               shell: bash
               run: |

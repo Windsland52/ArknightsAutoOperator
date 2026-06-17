@@ -24,6 +24,25 @@ def project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _seed_examples(root: Path) -> None:
+    """首次启动把 examples/timelines/*.json 复制到 config/timelines/（仅当目标不存在）。
+
+    examples 随程序分发（可随版本更新），config 是用户数据（不被覆盖）。
+    用户改过的样例（目标已存在）不会被覆盖；新版本新增的样例会自动补进。
+    """
+    import shutil
+
+    src_dir = root / "examples" / "timelines"
+    dst_dir = root / "config" / "timelines"
+    if not src_dir.exists():
+        return
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    for src in src_dir.glob("*.json"):
+        dst = dst_dir / src.name
+        if not dst.exists():
+            shutil.copy2(src, dst)
+
+
 def configure_paths() -> dict[str, Path]:
     root = project_root()
     paths = {
@@ -37,6 +56,9 @@ def configure_paths() -> dict[str, Path]:
         paths[key].mkdir(parents=True, exist_ok=True)
     (paths["resource"] / "base").mkdir(parents=True, exist_ok=True)
 
+    # 首次启动播种样例时间轴到 config/timelines（不覆盖已有）
+    _seed_examples(root)
+
     # PyInstaller 环境下，告诉 maafw 去 _internal/maa/bin 找 MaaFramework.dll。
     # （maafw 的 ctypes 加载见 maa/__init__.py：优先读 MAAFW_BINARY_PATH 环境变量）
     if is_frozen():
@@ -47,3 +69,4 @@ def configure_paths() -> dict[str, Path]:
     if os.getcwd() != str(root):
         os.chdir(root)
     return paths
+

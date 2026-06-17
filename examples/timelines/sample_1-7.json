@@ -1,0 +1,78 @@
+{
+    "map_code": "1-7",
+    "coordinate": "frame",
+    "name": "",
+    "actions": [
+        {
+            "frame": 570,
+            "action_type": "部署",
+            "oper": "斑点",
+            "pos": "B4",
+            "direction": "右"
+        },
+        {
+            "frame": 660,
+            "action_type": "部署",
+            "oper": "Castle-3",
+            "pos": "C4",
+            "direction": "左"
+        },
+        {
+            "frame": 660,
+            "action_type": "撤退",
+            "oper": "Castle-3",
+            "pos": "C4"
+        },
+        {
+            "frame": 1022,
+            "action_type": "技能",
+            "oper": "斑点",
+            "pos": "B4"
+        },
+        {
+            "frame": 1230,
+            "action_type": "部署",
+            "oper": "克洛丝",
+            "pos": "F5",
+            "direction": "左"
+        },
+        {
+            "frame": 1230,
+            "action_type": "部署",
+            "oper": "芬",
+            "pos": "E5",
+            "direction": "左"
+        },
+        {
+            "frame": 1230,
+            "action_type": "部署",
+            "oper": "Lancet-2",
+            "pos": "B6",
+            "direction": "上"
+        },
+        {
+            "frame": 1230,
+            "action_type": "撤退",
+            "oper": "克洛丝",
+            "pos": "F5"
+        },
+        {
+            "frame": 1230,
+            "action_type": "撤退",
+            "oper": "芬",
+            "pos": "E5"
+        },
+        {
+            "frame": 1230,
+            "action_type": "撤退",
+            "oper": "Lancet-2",
+            "pos": "B6"
+        },
+        {
+            "frame": 1260,
+            "action_type": "技能",
+            "oper": "装置",
+            "pos": "D4"
+        }
+    ]
+}
