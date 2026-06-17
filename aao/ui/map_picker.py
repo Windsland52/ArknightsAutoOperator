@@ -3,8 +3,9 @@
 点关卡 → 选中格子 → 生成棋盘记号（如 D2）→ 确认回填到编辑面板。
 区分可部署/不可部署（buildableType: 0=不可, 1=地面, 2=高台）。
 
-棋盘坐标与 convert_pos 一致：列=字母(A=0), 行=数字(从下往上, row=0 最下)。
-QGraphicsScene 里 y 向下，故渲染时 row 越大越靠上 → y = (height-1-row)*cell。
+tiles[r] 中 r=0 是玩家视角最上行（行号最大），r=height-1 是最下行（行号1）。
+QGraphicsScene y 向下，故 y = r*cell：r 小(行号大、玩家上方)→画面上方。
+棋盘记号由 tile_position_to_str 算（行号 = height - r）。
 """
 
 from __future__ import annotations
@@ -64,9 +65,10 @@ class _MapGrid(QGraphicsView):
                 # 不可部署加深
                 if tile.get("buildableType", 0) == 0 and key not in ("start", "end"):
                     base = base.darker(150)
-                # y 向下：row 大=靠上 → y 小
+                # tiles[r] 中 r=0 是玩家视角最上行(行号最大)，r=height-1 是最下行(行号1)。
+                # QScene y 向下，故 y = r*cell（r 小=行号大=玩家上方→画面上方）。
                 x = c * _CELL
-                y = (self._height - 1 - r) * _CELL
+                y = r * _CELL
                 rect = QGraphicsRectItem(x, y, _CELL, _CELL)
                 rect.setBrush(QBrush(base))
                 rect.setPen(QPen(QColor("#000"), 1))
@@ -91,8 +93,7 @@ class _MapGrid(QGraphicsView):
         # 点击的可能是被 label 覆盖，回退：按坐标算
         sp = self.mapToScene(event.pos())
         c = int(sp.x() // _CELL)
-        y = int(sp.y() // _CELL)
-        r = self._height - 1 - y
+        r = int(sp.y() // _CELL)  # y=r*cell 渲染，故 r=y
         if 0 <= c < self._width and 0 <= r < self._height:
             self._select(c, r)
         super().mousePressEvent(event)

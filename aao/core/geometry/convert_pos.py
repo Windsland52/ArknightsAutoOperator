@@ -1,8 +1,8 @@
 """棋盘记号（如 D2）↔ 格子坐标 (row, col)。
 
 prts-plus 约定：Pos 列 = 字母（A=0, B=1, ...），行 = 数字（从下往上）。
-row=0 是最下面一行，row=height-1 是最上面一行。
-col=0 是最左边一列。
+row=0 是 tiles 第一行（玩家视角最上、行号最大），row=height-1 是最下行（行号1）。
+即行号 = height - row。col=0 是最左边一列。
 
 例如 7 行 10 列的地图中：
   A1 → (row=6, col=0)    G10 → (row=0, col=9)
