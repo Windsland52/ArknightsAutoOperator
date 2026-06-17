@@ -38,7 +38,7 @@
             "python",
             "-u",
             "-m",
-            "custom.maa.agent"
+            "custom.agent"
         ]
     },
     "task": [

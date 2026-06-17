@@ -31,7 +31,7 @@ resource/base/model/ocr/
 # Runtime config (calibration profiles, controller settings, ...)
 config/
 
-# Generated game data (run: uv run python -m custom.resources.syncer)
+# Generated game data (run: uv run python -m akop.resources.syncer)
 data/map/
 resource/base/image/avatar/
 

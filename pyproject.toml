@@ -10,6 +10,7 @@ dependencies = [
     "websockets>=13.0",
     "pillow>=10.0",
     "json5>=0.14.0",
+    "loguru>=0.7",
 ]
 
 [dependency-groups]
@@ -23,7 +24,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["custom"]
+packages = ["custom", "aao"]
 
 [tool.ruff]
 target-version = "py313"
@@ -33,7 +34,7 @@ line-length = 100
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.pyright]
-include = ["custom"]
-extraPaths = ["custom"]
+include = ["custom", "aao"]
+extraPaths = ["custom", "aao"]
 pythonVersion = "3.13"
 typeCheckingMode = "basic"
