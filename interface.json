@@ -11,12 +11,13 @@
             "name": "Win32-PC",
             "label": "PC 官方客户端 (Arknights.exe)",
             "type": "Win32",
+            "permission_required": true,
             "win32": {
                 "window_regex": "明日方舟",
                 "class_regex": "UnityWndClass",
                 "screencap": "FramePool",
                 "mouse": "PostMessageWithCursorPos",
-                "keyboard": "PostMessage"
+                "keyboard": "SendMessage"
             },
             "display_short_side": 720
         }
@@ -25,9 +26,21 @@
         {
             "name": "base",
             "label": "Base",
-            "path": ["./resource/base"]
+            "path": [
+                "./resource/base"
+            ]
         }
     ],
+    "agent": {
+        "child_exec": "uv",
+        "child_args": [
+            "run",
+            "python",
+            "-u",
+            "-m",
+            "custom.maa.agent"
+        ]
+    },
     "task": [
         // {
         //     "name": "Calibrate",
@@ -39,8 +52,91 @@
             "name": "FarmStage",
             "label": "自动刷图",
             "entry": "Farm",
-            "description": "关卡导航→ExecuteTimeline 帧级执行→结算→循环刷图"
+            "description": "关卡导航→ExecuteTimeline 帧级执行→结算→循环刷图",
+            "option": [
+                "时间轴",
+                "选择难度"
+            ]
         }
     ],
-    "option": {}
+    "option": {
+        "时间轴": {
+            "type": "input",
+            "description": "config/timelines/ 下的时间轴文件路径（如 test_1-7.json），map_code 从文件读取",
+            "inputs": [
+                {
+                    "name": "timeline_path",
+                    "pipeline_type": "string",
+                    "default": "test_1-7.json"
+                }
+            ],
+            "pipeline_override": {
+                "Farm@ClickStage": {
+                    "custom_recognition_param": {
+                        "timeline_path": "{timeline_path}"
+                    }
+                },
+                "Farm@Execute": {
+                    "custom_action_param": {
+                        "timeline_path": "{timeline_path}"
+                    }
+                }
+            }
+        },
+        "选择难度": {
+            "type": "select",
+            "cases": [
+                {
+                    "name": "自行选好难度",
+                    "description": "点击关卡后会直接点击开始行动/演习",
+                    "option": [
+                        "是否演习"
+                    ],
+                    "pipeline_override": {
+                        "Farm": {
+                            "anchor": {
+                                "Farm@SwitchDifficulty": "Farm@StartButton1"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "沙盘推演",
+                    "description": "点击关卡后会选择沙盘难度并点击开始推演",
+                    "pipeline_override": {
+                        "Farm": {
+                            "anchor": {
+                                "Farm@SwitchDifficulty": "Farm@SwitchDifficulty"
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        "是否演习": {
+            "type": "switch",
+            "cases": [
+                {
+                    "name": "Yes",
+                    "pipeline_override": {
+                        "Farm@StartButton1": {
+                            "expected": [
+                                "演习"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "No",
+                    "pipeline_override": {
+                        "Farm@StartButton1": {
+                            "expected": [
+                                "开始行动"
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    }
 }

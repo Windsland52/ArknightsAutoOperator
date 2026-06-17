@@ -22,7 +22,7 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from custom.core.timing import calibration  # noqa: E402
-from custom.maa.action.executor import ExecuteTimeline  # noqa: E402
+from custom.maa.registry import register_all  # noqa: E402
 from custom.timeline.io import load_timeline  # noqa: E402
 from custom.utils.logger import setup_logging  # noqa: E402
 from custom.utils.runtime_paths import configure_paths  # noqa: E402
@@ -81,7 +81,7 @@ def main() -> int:
     # 创建 Resource + 注册 custom action
     res = Resource()
     res.post_bundle(str(paths["resource"] / "base")).wait()
-    res.register_custom_action("ExecuteTimeline", ExecuteTimeline())
+    register_all(res)
 
     # 创建 Tasker
     tasker = Tasker()

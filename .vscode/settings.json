@@ -16,11 +16,15 @@
     "files.eol": "\n",
     "json.schemas": [
         {
-            "fileMatch": ["/interface.json"],
+            "fileMatch": [
+                "/interface.json"
+            ],
             "url": "./tools/schema/interface.schema.json"
         },
         {
-            "fileMatch": ["/tasks/*.json"],
+            "fileMatch": [
+                "/tasks/*.json"
+            ],
             "url": "./tools/schema/interface_import.schema.json"
         },
         {

@@ -23,6 +23,7 @@ import json
 import logging
 import time
 
+import numpy as np
 from maa.context import Context
 from maa.controller import Controller
 from maa.custom_action import CustomAction
@@ -36,15 +37,18 @@ from custom.core.geometry.map_loader import load_map
 from custom.core.geometry.view import transform_map_to_view
 from custom.core.timing.calibration import load as load_calibration
 from custom.core.timing.time_source import TimeSource
+from custom.maa.registry import custom_action
 
 logger = logging.getLogger(__name__)
 
 
+@custom_action("ExecuteTimeline")
 class ExecuteTimeline(CustomAction):
     """执行时间轴上所有动作。"""
 
     # 运行时状态（_execute 中初始化）
     _paused: bool = False
+    _leaked: bool = False
     _hwnd: int | None = None
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> CustomAction.RunResult:
@@ -60,12 +64,23 @@ class ExecuteTimeline(CustomAction):
 
     def _execute(self, context: Context, params: dict) -> CustomAction.RunResult:
         ctrl = context.tasker.controller
-        raw_actions = params.get("timeline", [])
-        calib_file = params.get("calibration", "")
-        map_code = params.get("map_code", "")
 
-        if not raw_actions or not calib_file or not map_code:
-            logger.error("缺少参数: timeline/calibration/map_code")
+        # 优先 timeline_path（从文件加载，文件内含 map_code），兼容显式 timeline 数组
+        timeline_path = params.get("timeline_path")
+        if timeline_path:
+            tl = self._load_timeline_file(timeline_path)
+            if tl is None:
+                return CustomAction.RunResult(success=False)
+            raw_actions = tl.get("actions", [])
+            map_code = params.get("map_code") or tl.get("map_code", "")
+        else:
+            raw_actions = params.get("timeline", [])
+            map_code = params.get("map_code", "")
+
+        calib_file = params.get("calibration") or config.DEFAULT_CALIBRATION
+
+        if not raw_actions or not map_code:
+            logger.error("缺少参数: 需要 timeline_path 或 (timeline + map_code)")
             return CustomAction.RunResult(success=False)
 
         # 加载数据
@@ -87,6 +102,7 @@ class ExecuteTimeline(CustomAction):
 
         # AFA 需要游戏窗口前台 + 暂停状态机
         self._paused = False
+        self._leaked = False
         self._hwnd = afa_hotkey.find_game_window()
         if self._hwnd is None:
             logger.error("未找到「明日方舟」窗口，AFA 热键无法生效")
@@ -102,9 +118,31 @@ class ExecuteTimeline(CustomAction):
             logger.info("[%d/%d] %s", i + 1, len(actions), action)
             self._perform_action(context, ctrl, action, time_source)
 
-        # 全部动作执行完，恢复游戏运行
+            if self._leaked:
+                logger.warning("漏怪，中止剩余动作，放弃本局")
+                break
+
+        # 全部动作执行完（或漏怪中止），恢复游戏运行
         self._resume()
-        return CustomAction.RunResult(success=True)
+        # 漏怪 = 本局失败（farm pipeline 会走放弃重试）
+        return CustomAction.RunResult(success=not self._leaked)
+
+    def _load_timeline_file(self, path: str) -> dict | None:
+        """加载时间轴 JSON（纯文件名→config/timelines/，带路径→相对项目根）。"""
+        from custom.maa.reco.click_stage import _resolve_timeline_path
+
+        p = _resolve_timeline_path(path)
+        if not p.exists():
+            logger.error("时间轴文件不存在: %s", p)
+            return None
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            logger.exception("时间轴文件解析失败: %s", p)
+            return None
+        n = len(data.get("actions", []))
+        logger.info("加载时间轴 %s（map_code=%s, %d 动作）", p, data.get("map_code"), n)
+        return data
 
     def _parse_actions(self, raw: list[dict], map_data: dict) -> list[Action]:
         """解析 JSON 动作列表 → Action 对象（含投影坐标 + 目标帧）。"""
@@ -183,8 +221,14 @@ class ExecuteTimeline(CustomAction):
             logger.debug("距离目标 %d 帧，等待", target_frame - current)
             self._resume()
             self._wait_until_frames(
-                ctrl, ts, target_frame - bullet_threshold, context_tasker_stopping=lambda: False
+                context,
+                ctrl,
+                ts,
+                target_frame - bullet_threshold,
+                context_tasker_stopping=lambda: False,
             )
+            if self._leaked:
+                return  # 漏怪，跳过本动作的暂停/逐帧/操作
 
         # 到达 bullet 阈值 → 暂停（AFA F 键）
         self._pause()
@@ -210,10 +254,16 @@ class ExecuteTimeline(CustomAction):
         return ts.total_elapsed_frames
 
     def _wait_until_frames(
-        self, ctrl: Controller, ts: TimeSource, target_frame: int, context_tasker_stopping
+        self,
+        context: Context,
+        ctrl: Controller,
+        ts: TimeSource,
+        target_frame: int,
+        context_tasker_stopping,
     ) -> None:
-        """等待直到累计帧到达 target_frame。"""
+        """等待直到累计帧到达 target_frame（运行态）。期间每 1s 检测一次漏怪。"""
         deadline = time.time() + 120
+        last_leak_check = 0.0
         while time.time() < deadline:
             if context_tasker_stopping():
                 return
@@ -221,7 +271,23 @@ class ExecuteTimeline(CustomAction):
             lf = ts.update(img)
             if lf is not None and ts.total_elapsed_frames >= target_frame:
                 return
+            # 漏怪检测：血量图标变红（BattleHpFlag2），低频（1s），不影响计时
+            now = time.time()
+            if now - last_leak_check >= 1.0:
+                last_leak_check = now
+                if self._detect_leak(context, img):
+                    logger.warning("检测到漏怪（血量图标变红），提前中止时间轴")
+                    self._leaked = True
+                    return
             time.sleep(0.016)
+
+    def _detect_leak(self, context: Context, img: np.ndarray) -> bool:
+        """漏怪检测：血量图标变红（BattleHpFlag2）命中 = 漏怪。"""
+        reco = context.run_recognition(
+            "Farm@LeakDetect",
+            img,
+        )
+        return bool(reco and reco.hit)
 
     # --- 暂停状态机（经 AFA 热键） ---
 
@@ -239,9 +305,7 @@ class ExecuteTimeline(CustomAction):
         afa_hotkey.tap_key(afa_hotkey.VK_SPACE)  # AFA: 松开暂停（Space 脉冲）
         self._paused = False
 
-    def _step_to_frames(
-        self, ctrl: Controller, ts: TimeSource, target_frame: int
-    ) -> None:
+    def _step_to_frames(self, ctrl: Controller, ts: TimeSource, target_frame: int) -> None:
         """逐帧步进到累计帧 target_frame（游戏须已暂停）。
 
         发 AFA R 键（Action33ms），AFA 要求光标在游戏客户区内。

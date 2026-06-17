@@ -68,3 +68,6 @@ SIMILARITY_THRESHOLD = 0.8
 CYCLE_HIGH_THRESHOLD = 0.9
 CYCLE_LOW_THRESHOLD = 0.1
 OUTLIER_MULTIPLIER = 5.0
+
+# --- Default resources ---
+DEFAULT_CALIBRATION = "test_30f_1280x720.json"  # 默认校准文件名（config/calibration/ 下）

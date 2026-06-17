@@ -1,0 +1,250 @@
+{
+    "Farm": {
+        "desc": "凹图入口：点关卡→[难度分支]→战斗→ExecuteTimeline→结算→三星停/非三星放弃循环",
+        "anchor": {
+            "Farm@SwitchDifficulty": "Farm@StartButton1" // 默认用户已选好难度直接点开始行动
+        },
+        "next": [
+            "[Anchor]Farm@SwitchDifficulty",
+            "[JumpBack]Farm@ClickStage"
+        ]
+    },
+    "Farm@ClickStage": {
+        "desc": "Custom recognition：读 timeline_path → map_code → OCR 识别关卡名并点击",
+        "recognition": "Custom",
+        "custom_recognition": "ClickStage",
+        "custom_recognition_param": {
+            "timeline_path": ""
+        },
+        "action": "Click",
+        "post_delay": 2000
+    },
+    "Farm@StartButton1": {
+        "desc": "[默认] 详情页「开始行动」→进编队页",
+        "recognition": "OCR",
+        "roi": [
+            997,
+            625,
+            273,
+            61
+        ],
+        "expected": [
+            "开始行动"
+        ],
+        "pre_delay": 500,
+        "action": "Click",
+        "post_delay": 1500,
+        "next": [
+            "Farm@StartButton2"
+        ]
+    },
+    "Farm@StartButton2": {
+        "desc": "编队页「开始行动」→开战（两分支汇合点）",
+        "recognition": "TemplateMatch",
+        "roi": [
+            945,
+            322,
+            221,
+            341
+        ],
+        "template": [
+            "StartButton2.png",
+            "StartButton2-1.png",
+            "StartButton2-2.png"
+        ],
+        "action": "Click",
+        "next": [
+            "Farm@BattleOn"
+        ]
+    },
+    "Farm@SwitchDifficulty": {
+        "desc": "[沙盘] 切换到沙盘推演难度",
+        "recognition": "OCR",
+        "roi": [
+            1042,
+            169,
+            65,
+            18
+        ],
+        "expected": [
+            "沙盘推演"
+        ],
+        "only_rec": true,
+        "action": "Click",
+        "post_delay": 1500,
+        "next": [
+            "Farm@StartSimulation",
+            "Farm@SwitchDifficulty"
+        ]
+    },
+    "Farm@StartSimulation": {
+        "desc": "[沙盘] 「开始推演」→开战",
+        "recognition": "OCR",
+        "roi": [
+            997,
+            625,
+            273,
+            61
+        ],
+        "expected": [
+            "开始推演"
+        ],
+        "action": "Click",
+        "next": [
+            "Farm@StartButton2"
+        ]
+    },
+    "Farm@BattleOn": {
+        "desc": "等战斗正式加载",
+        "recognition": "TemplateMatch",
+        "roi": [
+            1186,
+            18,
+            60,
+            60
+        ],
+        "template": "BattleOfficiallyBegin.png",
+        "next": [
+            "Farm@Execute"
+        ]
+    },
+    "Farm@Execute": {
+        "desc": "帧级执行时间轴",
+        "action": "Custom",
+        "custom_action": "ExecuteTimeline",
+        "custom_action_param": "",
+        "next": [
+            "Farm@Settle"
+        ]
+    },
+    "Farm@Settle": {
+        "desc": "等结算界面：三星=成功结束，二星=放弃重试，超时=放弃重试",
+        "timeout": 120000,
+        "rate_limit": 500,
+        "next": [
+            "Farm@LeakDetect",
+            "[JumpBack]Farm@MissionFailed"
+        ],
+        "on_error": [
+            "Farm@Abandon"
+        ]
+    },
+    "Farm@Settlement": {
+        "desc": "游戏战斗结算页面",
+        "recognition": "TemplateMatch",
+        "roi": [
+            35,
+            180,
+            298,
+            112
+        ],
+        "template": [
+            "Settlement.png"
+        ],
+        "post_delay": 2000,
+        "next": [
+            "Farm@Stars3",
+            "Farm@StarsNo3"
+        ]
+    },
+    "Farm@Stars3": {
+        "desc": "三星结算→点击继续→任务成功结束",
+        "recognition": "TemplateMatch",
+        "roi": [
+            24,
+            253,
+            278,
+            136
+        ],
+        "template": "StageDrops-Stars-3.png",
+        "action": "Click"
+    },
+    "Farm@StarsNo3": {
+        "desc": "非三星结算→放弃重试",
+        "recognition": "TemplateMatch",
+        "roi": [
+            24,
+            253,
+            278,
+            136
+        ],
+        "template": [
+            "StageDrops-Stars-0.png",
+            "StageDrops-Stars-2.png"
+        ],
+        "action": "Click",
+        "post_delay": 2000,
+        "next": [
+            "Farm"
+        ]
+    },
+    "Farm@LeakDetect": {
+        "recognition": "TemplateMatch",
+        "roi": [
+            400,
+            0,
+            650,
+            60
+        ], // MAA BattleHpFlag roi
+        "template": "BattleHpFlag2.png",
+        "method": 10001,
+        "next": [
+            "Farm@Abandon"
+        ]
+    },
+    "Farm@Abandon": {
+        "desc": "放弃行动",
+        "recognition": "TemplateMatch",
+        "roi": [
+            40,
+            23,
+            62,
+            52
+        ],
+        "template": [
+            "Settings.png"
+        ],
+        "action": "Click",
+        "post_delay": 1000,
+        "next": [
+            "Farm@AbandonConfirm",
+            "Farm@Abandon"
+        ]
+    },
+    "Farm@AbandonConfirm": {
+        "desc": "确认放弃→回到关卡列表→循环重试",
+        "recognition": "OCR",
+        "roi": [
+            854,
+            487,
+            211,
+            133
+        ],
+        "expected": [
+            "放弃行动"
+        ],
+        "action": "Click",
+        "next": [
+            "Farm@MissionFailed",
+            "Farm@AbandonConfirm"
+        ]
+    },
+    "Farm@MissionFailed": {
+        "desc": "任务失败",
+        "recognition": "TemplateMatch",
+        "roi": [
+            63,
+            268,
+            360,
+            194
+        ],
+        "template": [
+            "MissionFailed.png"
+        ],
+        "action": "Click",
+        "post_delay": 2000,
+        "next": [
+            "Farm@StarsNo3"
+        ]
+    }
+}
