@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
@@ -33,6 +34,8 @@ from aao.ui.farm_worker import FarmWorker
 from aao.utils.runtime_paths import project_root
 
 if TYPE_CHECKING:
+    from PySide6.QtGui import QShowEvent
+
     from aao.ui.farm_worker import RoundResult
     from aao.ui.log_handler import QtLogHandler
 
@@ -136,16 +139,28 @@ class FarmPage(QWidget):
         self.btn_stop.clicked.connect(self._on_stop)
 
     def _load_timelines(self) -> None:
+        cur = self.cb_timeline.currentText()
         self.cb_timeline.clear()
         d = project_root() / "config" / "timelines"
         for p in sorted(d.glob("*.json")):
             self.cb_timeline.addItem(p.name)
+        if cur:
+            self.cb_timeline.setCurrentText(cur)
 
     def _load_profiles(self) -> None:
+        cur = self.cb_profile.currentText()
         self.cb_profile.clear()
         d = project_root() / "config" / "calibration"
         for p in sorted(d.glob("*.json")):
             self.cb_profile.addItem(p.name)
+        if cur:
+            self.cb_profile.setCurrentText(cur)
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: D401
+        # 切到凹图页时刷新下拉（新加的 timeline/profile 立即可见）
+        self._load_timelines()
+        self._load_profiles()
+        super().showEvent(event)
 
     # --- 注入（由 MainWindow 调用）---
 
@@ -161,11 +176,13 @@ class FarmPage(QWidget):
 
     def _on_start(self) -> None:
         if self._controller is None or self._tasker is None:
-            self.lbl_state.setText("未连接游戏窗口")
+            QMessageBox.warning(
+                self, "未连接", "游戏窗口未连接。请到「设置」页选择窗口并设为默认。"
+            )
             return
         timeline = self.cb_timeline.currentText()
         if not timeline:
-            self.lbl_state.setText("请选择时间轴")
+            QMessageBox.warning(self, "未选时间轴", "请先选择时间轴文件。")
             return
         difficulty = "sand" if self.rb_sand.isChecked() else "normal"
         try:

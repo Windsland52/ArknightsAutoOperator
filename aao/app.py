@@ -81,6 +81,13 @@ except (ImportError, OSError):
 
 
 
+# 侧栏页索引（与 _build_ui addWidget 顺序一致）
+_PAGE_FARM = 0
+_PAGE_EDITOR = 1
+_PAGE_CALIB = 2
+_PAGE_SETTINGS = 3
+
+
 class MainWindow(QMainWindow):
     """主控台：侧栏导航 + QStackedWidget 内容区。"""
 
@@ -134,6 +141,119 @@ class MainWindow(QMainWindow):
         self.hotkey_timer.timeout.connect(self._poll_hotkeys)
         self.hotkey_timer.start(16)  # ~60Hz
 
+        # 新手引导：未完成过引导（settings 无 onboarded）则默认停在设置页
+        if self._needs_onboarding():
+            self.nav.setCurrentRow(_PAGE_SETTINGS)
+            logger.info("首次启动，引导到设置页")
+
+    # --- 新手引导 ---
+
+    @staticmethod
+    def _needs_onboarding() -> bool:
+        """是否需要新手引导：未标记 onboarded 时引导一次。"""
+        from aao.ui.settings_page import load_settings
+
+        return not load_settings().get("onboarded", False)
+
+    def _on_window_configured(self) -> None:
+        """设置页"设为默认窗口"后：按新窗口重连 controller/tasker 并注入各页；
+        引导中则提示去校准并跳页。"""
+        ok = self._reconnect()
+        if not ok:
+            QMessageBox.warning(
+                self,
+                "连接失败",
+                "未找到指定窗口，请确认游戏已启动且窗口选择正确。",
+            )
+            return
+        if not self._needs_onboarding():
+            return
+        QMessageBox.information(
+            self,
+            "下一步：校准",
+            "窗口已设置。请到「校准」页完成费用条校准后再凹图。",
+        )
+        self.nav.setCurrentRow(_PAGE_CALIB)
+
+    def _reconnect(self) -> bool:
+        """按 settings.json 的 window_name/class 重连 controller + 重建 tasker，
+        注入凹图页/校准页，并（若有校准）启 measure worker。返回是否连上。
+
+        同步执行（连窗口+post_bundle 约 1-2s，短暂卡 UI 可接受）。
+        """
+        from maa.toolkit import Toolkit
+
+        from aao.ui.settings_page import load_settings
+
+        s = load_settings()
+        controller = connect_window(
+            Toolkit,
+            prefer_name=s.get("window_name"),
+            prefer_class=s.get("window_class"),
+        )
+        if controller is None:
+            return False
+        tasker = build_tasker(controller)
+        if tasker is None:
+            return False
+
+        # 停旧的 measure worker（若有）
+        if self.worker is not None:
+            self.worker.stop()
+        if self.worker_thread is not None:
+            self.worker_thread.quit()
+            self.worker_thread.wait()
+            self.worker = None
+            self.worker_thread = None
+
+        self._controller = controller
+        self._tasker = tasker
+        self.farm_page.set_runtime(controller, tasker)
+        self.calib_page.set_runtime(controller)
+
+        # 有校准则启 measure worker（供悬浮窗/打轴实时帧）
+        if self._calibration_data is not None:
+            if self.overlay is None:  # 首次启动 controller 为 None 时未建，此处补建
+                self.overlay = OverlayWindow()
+                self.overlay.show()
+            self.worker = MeasurementWorker(
+                controller, self._calibration_data, profile_name=self._profile_name
+            )
+            self.worker_thread = QThread()
+            self.worker.moveToThread(self.worker_thread)
+            self.worker_thread.started.connect(self.worker.run)
+            self.worker.state_changed.connect(self.overlay.on_state)
+            self.worker.state_changed.connect(self._on_measure_state)
+            self.worker_thread.start()
+
+        self.status_conn.setText("● 已连接")
+        self.status_profile.setText(f"profile: {self._profile_name}")
+        return True
+
+    def _on_profile_saved(self, filename: str) -> None:
+        """校准页保存后：重载校准数据 + 重连（measure worker 用新校准），引导中则提示跳凹图。"""
+        try:
+            self._calibration_data = calibration.load(filename)
+            self._profile_name = filename
+        except (OSError, ValueError):
+            logger.exception("校准 %s 加载失败", filename)
+        if self._controller is not None:
+            self._reconnect()  # 用新校准重启 measure worker
+
+        if not self._needs_onboarding():
+            return
+        from aao.ui.settings_page import load_settings, save_settings
+
+        QMessageBox.information(
+            self,
+            "可以凹图了",
+            "校准完成。可到「凹图」页开始自动凹图。",
+        )
+        s = load_settings()
+        s["onboarded"] = True
+        save_settings(s)
+        self.nav.setCurrentRow(_PAGE_FARM)
+
     def _build_ui(self) -> None:
         central = QWidget()
         root = QHBoxLayout(central)
@@ -171,6 +291,11 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(central)
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
+
+        # 新手引导：设置页连好窗口 → 引导中则跳校准页；校准页保存 → 跳凹图页 + 标记完成
+        # 普通 settings_changed（改端口/profile）不触发引导
+        self.settings_page.window_configured.connect(self._on_window_configured)
+        self.calib_page.profile_saved.connect(self._on_profile_saved)
 
         # 状态栏
         connected = self._controller is not None

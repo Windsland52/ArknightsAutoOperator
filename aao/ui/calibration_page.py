@@ -84,6 +84,8 @@ class CalibrationPage(QWidget):
 
     # 校准开始/结束通知 MainWindow 暂停/恢复 measure worker（避免抢截图）
     busy_changed = Signal(bool)
+    # 校准保存成功（新手引导：通知 MainWindow 可跳凹图页）
+    profile_saved = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -187,6 +189,7 @@ class CalibrationPage(QWidget):
         try:
             filename = calibration.save(data, name)
             self.txt_log.append(f"✓ 已保存: {filename}")
+            self.profile_saved.emit(filename)
             QMessageBox.information(self, "校准完成", f"已保存校准: {filename}")
         except Exception as e:  # noqa: BLE001
             self.txt_log.append(f"保存失败: {e}")

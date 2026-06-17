@@ -128,6 +128,7 @@ class SettingsPage(QWidget):
     """设置页。"""
 
     settings_changed = Signal()  # 保存后通知 MainWindow（端口/profile 变更需重启生效）
+    window_configured = Signal()  # 设为默认窗口后（新手引导用：连完窗口 → 校准）
 
     def __init__(self):
         super().__init__()
@@ -137,8 +138,9 @@ class SettingsPage(QWidget):
         self._load()
 
     def showEvent(self, event: QShowEvent) -> None:  # noqa: D401
-        # 每次切到设置页自动刷新窗口列表
+        # 切到设置页自动刷新窗口列表 + profile 下拉（新校准的立即可见）
         self._refresh_windows()
+        self._load_profiles()
         super().showEvent(event)
 
     def _build_ui(self) -> None:
@@ -225,10 +227,13 @@ class SettingsPage(QWidget):
         self._preview_worker: _PreviewWorker | None = None
 
     def _load_profiles(self) -> None:
+        cur = self.cb_profile.currentText()
         self.cb_profile.clear()
         d = project_root() / "config" / "calibration"
         for p in sorted(d.glob("*.json")):
             self.cb_profile.addItem(p.name)
+        if cur:
+            self.cb_profile.setCurrentText(cur)
 
     def _res_status_text(self) -> str:
         from aao.core.geometry.map_loader import list_codes
@@ -336,6 +341,7 @@ class SettingsPage(QWidget):
             f"已设为默认: {w.window_name}（重启生效）"
         )
         self.settings_changed.emit()
+        self.window_configured.emit()
         self._refresh_windows()  # 刷新★标记
 
     def _cleanup_preview_thread(self) -> None:
