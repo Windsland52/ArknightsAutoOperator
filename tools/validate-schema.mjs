@@ -11,7 +11,8 @@ assertNonEmptyString(interfaceJson.label, 'interface.json label')
 assertVersion(interfaceJson.version, 'interface.json version', true)
 assertArrayOfRecords(interfaceJson.controller, 'interface.json controller')
 assertArrayOfRecords(interfaceJson.resource, 'interface.json resource')
-assertArrayOfStrings(interfaceJson.import, 'interface.json import')
+// import 可省略（MFAAvalonia 风格下用于引入额外 pipeline，本项目无外部依赖时省略）。
+assertArrayOfStrings(interfaceJson.import ?? [], 'interface.json import')
 
 const CONTROLLER_TYPES = [
     'Adb',
@@ -47,7 +48,7 @@ if (interfaceJson.resource[0]?.path?.[0] !== './resource/base') {
 
 // 所有 import / resource 路径必须实际存在。
 for (const p of [
-    ...interfaceJson.import,
+    ...(interfaceJson.import ?? []),
     ...interfaceJson.resource.flatMap((r) => r.path)
 ]) {
     if (!existsSync(p)) throw new Error(`referenced path does not exist: ${p}`)
@@ -73,9 +74,55 @@ for (const path of walkJsonFiles([
 console.log('[OK] project schema shape is valid')
 
 // --- helpers ---
+
+// MaaFW 项目约定 JSON 可带 // 行注释与 /* */ 块注释（JSONC）。
+// JSON.parse 不认注释，故解析前剥离（跳过字符串字面量内的注释符号）。
+function stripJsonc(text) {
+    let out = ''
+    let i = 0
+    const n = text.length
+    while (i < n) {
+        const ch = text[i]
+        const next = text[i + 1]
+        // 字符串字面量：原样复制到闭合引号（处理 \" 转义）
+        if (ch === '"') {
+            out += ch
+            i += 1
+            while (i < n) {
+                const c = text[i]
+                out += c
+                i += 1
+                if (c === '\\' && i < n) {
+                    out += text[i]
+                    i += 1
+                } else if (c === '"') {
+                    break
+                }
+            }
+            continue
+        }
+        // 行注释
+        if (ch === '/' && next === '/') {
+            while (i < n && text[i] !== '\n') i += 1
+            continue
+        }
+        // 块注释
+        if (ch === '/' && next === '*') {
+            i += 2
+            while (i < n && !(text[i] === '*' && text[i + 1] === '/')) i += 1
+            i += 2
+            out += ' '
+            continue
+        }
+        out += ch
+        i += 1
+    }
+    return out
+}
+
 function readJson(path) {
     if (!existsSync(path)) throw new Error(`${path} is missing`)
-    return JSON.parse(readFileSync(path, 'utf8'))
+    return JSON.parse(stripJsonc(readFileSync(path, 'utf8')))
 }
 
 function assertEqual(actual, expected, message) {
