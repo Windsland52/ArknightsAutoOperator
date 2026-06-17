@@ -32,8 +32,8 @@ _COLORS = {
     "wall": QColor("#6d4c41"),
     "road": QColor("#5a8f3a"),
     "hole": QColor("#222"),
-    "start": QColor("#1565c0"),
-    "end": QColor("#c62828"),
+    "start": QColor("#c62828"),
+    "end": QColor("#1565c0"),
 }
 
 
