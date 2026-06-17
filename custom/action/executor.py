@@ -68,6 +68,7 @@ class ExecuteTimeline(CustomAction):
     _paused: bool = False
     _leaked: bool = False
     _hwnd: int | None = None
+    _speed: int = 1  # 当前游戏倍速（1 或 2），执行开始强制归 1
 
     # 单例回调：每轮 _execute 末尾触发（在 MAA tasker 线程）。
     # 调用方负责跨线程转 Qt 信号。None = 不回调。
@@ -125,6 +126,7 @@ class ExecuteTimeline(CustomAction):
         # AFA 需要游戏窗口前台 + 暂停状态机
         self._paused = False
         self._leaked = False
+        self._speed = 1  # 假设进战斗默认 1 倍速（速度状态机起点）
         from custom.outcome import reset_outcome
 
         reset_outcome()  # 每轮开始清结算结果（sink 在结算节点命中时写入）
@@ -149,6 +151,10 @@ class ExecuteTimeline(CustomAction):
 
         # 全部动作执行完（或漏怪中止），恢复游戏运行
         self._resume()
+
+        # 最后一个动作执行完，开 2 倍速加速到结算（省时；漏怪中止则不必）
+        if not self._leaked:
+            self._set_speed(context, 2)
 
         # 回传本轮结果给 UI（若有回调）。在 tasker 线程触发。
         # 注意：on_round_finished 是被外部赋值的类属性（普通函数/闭包），
@@ -318,7 +324,11 @@ class ExecuteTimeline(CustomAction):
         target_frame: int,
         context_tasker_stopping: Callable[[], bool],
     ) -> None:
-        """等待直到累计帧到达 target_frame（运行态）。期间每 1s 检测一次漏怪。"""
+        """等待直到累计帧到达 target_frame（运行态）。
+
+        期间按剩余距离动态调速：远（> SPEED_UP_THRESHOLD）开 2x，近则回 1x；
+        每 1s 检测一次漏怪。
+        """
         deadline = time.time() + 120
         last_leak_check = 0.0
         while time.time() < deadline:
@@ -326,8 +336,19 @@ class ExecuteTimeline(CustomAction):
                 return
             img = ctrl.post_screencap().wait().get()
             lf = ts.update(img)
-            if lf is not None and ts.total_elapsed_frames >= target_frame:
-                return
+            if lf is not None:
+                current = ts.total_elapsed_frames
+                remaining = target_frame - current
+                # 倍速状态机：开局第一个周期（帧 0-29）不切 2x（费用条未稳）；
+                # 之后剩余远(> SPEED_UP_THRESHOLD) → 2x，剩余近 → 1x
+                if current < config.TICK_MAX_DEFAULT:
+                    want_speed = 1
+                else:
+                    want_speed = 2 if remaining > config.SPEED_UP_THRESHOLD else 1
+                if want_speed != self._speed:
+                    self._set_speed(context, want_speed)
+                if current >= target_frame:
+                    return
             # 漏怪检测：血量图标变红（BattleHpFlag2），低频（1s），不影响计时
             now = time.time()
             if now - last_leak_check >= 1.0:
@@ -361,6 +382,22 @@ class ExecuteTimeline(CustomAction):
             return
         afa_hotkey.tap_key(afa_hotkey.VK_SPACE)  # AFA: 松开暂停（Space 脉冲）
         self._paused = False
+
+    # --- 倍速状态机（pipeline 节点识别速度按钮并点击） ---
+
+    def _set_speed(self, context: Context, speed: int) -> None:
+        """设游戏倍速（1 或 2）。幂等：已是目标值则不调。
+
+        速度按钮的识别/点击由 pipeline 节点 Speed2x / Speed1x 完成
+       （TemplateMatch 速度按钮图标 + Click，roi/template 在 execute.json 填）。
+        context.run_task 运行该节点。点一次切换，靠 self._speed 记当前状态。
+        """
+        if speed == self._speed:
+            return
+        node = "Speed2x" if speed == 2 else "Speed1x"
+        context.run_task(node)
+        self._speed = speed
+        logger.debug("倍速 → %dx", speed)
 
     def _step_to_frames(self, ctrl: Controller, ts: TimeSource, target_frame: int) -> None:
         """逐帧步进到累计帧 target_frame（游戏须已暂停）。

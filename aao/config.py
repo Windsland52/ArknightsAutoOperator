@@ -16,7 +16,6 @@ LAST_OPER_RATIO = (0.95, 0.9)
 SKILL_RATIO = (0.6412, 0.5857)
 RETREAT_RATIO = (0.4569, 0.3352)
 PAUSE_BUTTON_RATIO = (0.94, 0.07)  # AFA: 0.9442, 0.0666 — consistent
-SPEED_BUTTON_RATIO = (0.86, 0.07)
 START_BUTTON_RATIO = (0.87, 0.74)
 DIRECTION_RATIO = 0.2
 DEPLOY_DELTA_RATIO = 0.02
@@ -47,6 +46,7 @@ FRAMES_PER_SECOND = 30
 TICK_MAX_DEFAULT = 30  # 1s = 30 ticks
 
 BULLET_THRESHOLD = 15  # frames before target → enter bullet time
+SPEED_UP_THRESHOLD = 90  # 距目标超此帧数 → 开 2 倍速（远了加速省时）
 FRAME_THRESHOLD = 2  # frames before target → frame-by-frame
 MINIMUM_WAIT_MS = 20
 MOUSE_WAIT_MS = 100

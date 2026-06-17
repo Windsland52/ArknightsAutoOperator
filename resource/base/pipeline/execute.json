@@ -3,5 +3,35 @@
         "recognition": "DirectHit",
         "action": "Custom",
         "custom_action": "ExecuteTimeline"
+    },
+    "Speed2x": {
+        "desc": "切到 2 倍速",
+        "recognition": "TemplateMatch",
+        "roi": [
+            1091,
+            23,
+            51,
+            31
+        ],
+        "template": [
+            "1X.png"
+        ],
+        "method": 10001,
+        "action": "Click"
+    },
+    "Speed1x": {
+        "desc": "切回 1 倍速",
+        "recognition": "TemplateMatch",
+        "roi": [
+            1091,
+            23,
+            51,
+            31
+        ],
+        "template": [
+            "2X.png"
+        ],
+        "method": 10001,
+        "action": "Click"
     }
 }
