@@ -15,6 +15,7 @@ venv/
 # Build / packaging
 dist/
 build/
+logo.ico
 
 # Runtime output
 debug/

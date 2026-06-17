@@ -33,6 +33,9 @@ jobs:
                   Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
                   Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE" -ErrorAction SilentlyContinue
                   Write-Host "Defender realtime monitoring disabled for build"
+            - name: Convert logo.png to ico
+              shell: bash
+              run: uv run python -c "from PIL import Image; Image.open('logo.png').save('logo.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
             - name: Build (PyInstaller)
               run: uv run pyinstaller aao.spec --noconfirm
             - name: Smoke test packaged exe
@@ -60,16 +63,6 @@ jobs:
                   curl -fsSL "https://github.com/$repo/releases/download/$tag/AFA.exe" -o dist/aao.app/afa/AFA.exe
                   curl -fsSL "https://raw.githubusercontent.com/$repo/$tag/LICENSE" -o dist/aao.app/afa/LICENSE || echo "[WARN] AFA LICENSE 未取到"
                   ls -la dist/aao.app/afa/
-            - name: Convert logo.png to ico
-              shell: bash
-              run: uv run python -c "from PIL import Image; Image.open('logo.png').save('logo.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
-            - name: Apply app icon
-              shell: bash
-              run: |
-                  cp logo.ico dist/aao.app/logo.ico
-                  curl -fsSL https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe -o rcedit.exe
-                  ./rcedit.exe dist/aao.app/aao.app.exe --set-icon logo.ico
-                  echo "[OK] Applied Windows executable icon"
             - name: Stage external resources
               shell: bash
               run: |

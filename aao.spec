@@ -145,6 +145,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon="logo.ico",  # 打包时由 PyInstaller 嵌入（不损坏 PKG；不用 rcedit）
 )
 
 coll = COLLECT(
