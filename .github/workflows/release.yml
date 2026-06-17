@@ -1,0 +1,102 @@
+name: Release
+
+on:
+    push:
+        tags:
+            - 'v*'
+    workflow_dispatch:
+
+jobs:
+    package:
+        permissions:
+            contents: read
+        runs-on: windows-latest
+        steps:
+            - uses: actions/checkout@v6
+            - uses: actions/setup-python@v6
+              with:
+                  python-version: '3.13'
+            - uses: astral-sh/setup-uv@v8.1.0
+            - uses: pnpm/action-setup@v6
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+                  cache: pnpm
+            - run: pnpm install --frozen-lockfile
+            - run: pnpm check
+            - run: pnpm check:py
+            - name: Build (PyInstaller)
+              run: uv run pyinstaller aao.spec --noconfirm
+            - name: Convert logo.png to ico
+              shell: bash
+              run: uv run python -c "from PIL import Image; Image.open('logo.png').save('logo.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
+            - name: Apply app icon
+              shell: bash
+              run: |
+                  cp logo.ico dist/aao.app/logo.ico
+                  curl -fsSL https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe -o rcedit.exe
+                  ./rcedit.exe dist/aao.app/aao.app.exe --set-icon logo.ico
+                  echo "[OK] Applied Windows executable icon"
+            - name: Stage external resources
+              shell: bash
+              run: |
+                  cp -r resource data config dist/aao.app/
+            - name: Package
+              shell: bash
+              run: |
+                  mkdir -p dist
+                  archive="ArknightsAutoOperator-win-x64-${GITHUB_REF_NAME}.zip"
+                  ( cd dist/aao.app && 7z a "../$archive" . )
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: win-x64
+                  path: dist/*.zip
+
+    git_cliff:
+        name: Generate release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+            - name: Generate release notes
+              shell: bash
+              env:
+                  GITHUB_REPO: ${{ github.repository }}
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  version="2.13.1"
+                  archive="git-cliff-${version}-x86_64-unknown-linux-gnu.tar.gz"
+                  mkdir -p "$RUNNER_TEMP/git-cliff"
+                  curl -fsSL "https://github.com/orhun/git-cliff/releases/download/v${version}/$archive" -o "$RUNNER_TEMP/$archive"
+                  tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP/git-cliff"
+                  git_cliff="$(find "$RUNNER_TEMP/git-cliff" -type f -name git-cliff -perm -111 | head -n 1)"
+                  if [[ -z "$git_cliff" ]]; then
+                    echo "[ERR] git-cliff binary was not found after extraction"
+                    exit 1
+                  fi
+                  "$git_cliff" --config .github/cliff.toml --latest --strip header --output CHANGES.md
+            - name: Upload release notes
+              uses: actions/upload-artifact@v7
+              with:
+                  name: release-notes
+                  path: CHANGES.md
+
+    release:
+        if: startsWith(github.ref, 'refs/tags/')
+        needs: [package, git_cliff]
+        permissions:
+            contents: write
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/download-artifact@v7
+              with:
+                  path: release-assets
+                  merge-multiple: true
+            - uses: softprops/action-gh-release@v3
+              with:
+                  body_path: release-assets/CHANGES.md
+                  files: |
+                      release-assets/*.zip
