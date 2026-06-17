@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 from aao.utils.logger import logger
 
 _WINDOW_TITLE_FRAGMENT = "明日方舟"
+_GAME_CLASS = "UnityWndClass"  # 明日方舟 PC 客户端窗口类名（区分浏览器/启动器等同名窗口）
 _SHORT_SIDE = 720
 
 
@@ -33,10 +34,11 @@ def list_game_windows(Toolkit: Any) -> list[Any]:
     return [w for w in wins if _WINDOW_TITLE_FRAGMENT in (w.window_name or "")]
 
 
-def _match_window(
-    wins: list[Any], prefer_name: str | None, prefer_class: str | None
-) -> Any | None:
-    """按 (window_name, class_name) 精确匹配；未指定或未命中则 fallback 第一个。"""
+def _match_window(wins: list[Any], prefer_name: str | None, prefer_class: str | None) -> Any | None:
+    """选窗口：设置页指定的 (name,class) 精确匹配优先；否则按 class=UnityWndClass
+    （游戏客户端特征）优先 fallback——避免浏览器标签/启动器等含「明日方舟」的
+    非游戏窗口被误选。"""
+    # 1. 精确匹配用户指定的窗口
     if prefer_name:
         for w in wins:
             if w.window_name == prefer_name and (
@@ -44,8 +46,13 @@ def _match_window(
             ):
                 return w
         logger.warning(
-            "未找到指定窗口 (name=%s, class=%s)，回退到第一个匹配", prefer_name, prefer_class
+            "未找到指定窗口 (name=%s, class=%s)，回退到自动选择", prefer_name, prefer_class
         )
+    # 2. 优先游戏客户端类名（UnityWndClass）
+    for w in wins:
+        if w.class_name == _GAME_CLASS:
+            return w
+    # 3. 兜底第一个
     return wins[0] if wins else None
 
 
