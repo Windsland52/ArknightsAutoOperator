@@ -63,6 +63,11 @@ jobs:
               with:
                   name: win-x64
                   path: dist/*.zip
+            - name: Upload raw dist (诊断 PKG 损坏用)
+              uses: actions/upload-artifact@v7
+              with:
+                  name: win-x64-raw
+                  path: dist/aao.app
 
     git_cliff:
         name: Generate release notes
