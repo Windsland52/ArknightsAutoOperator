@@ -362,7 +362,39 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
 
+def _ensure_admin() -> None:
+    """Windows 下若非管理员，用 UAC 提权重启自己（凹图 PostMessage 需 UIPI 权限）。
+
+    开发与打包均生效。用户拒绝 UAC 或非 Windows 则不重启（程序以普通权限继续）。
+    """
+    if sys.platform != "win32":
+        return
+    import ctypes
+
+    try:
+        if ctypes.windll.shell32.IsUserAnAdmin():  # pyright: ignore[reportAttributeAccessIssue]
+            return
+    except (AttributeError, OSError):
+        return
+
+    # 重新以管理员身份启动自己，只带原参数（不含 argv[0]=自身路径，避免重复）
+    args = sys.argv[1:]
+    params = " ".join(f'"{a}"' for a in args)
+    # 工作目录用 exe 所在目录（否则 UAC 提权后默认 system32，资源找不到）
+    work_dir = os.path.dirname(os.path.abspath(sys.executable))
+    try:
+        rc = ctypes.windll.shell32.ShellExecuteW(  # pyright: ignore[reportAttributeAccessIssue]
+            None, "runas", sys.executable, params, work_dir, 1
+        )
+        # ShellExecuteW 返回 >32 表示成功
+        if rc > 32:
+            raise SystemExit(0)
+    except (AttributeError, OSError):
+        pass
+
+
 def main() -> int:
+    _ensure_admin()
     # 先 configure_paths 让 settings_page 能读到 config/settings.json
     configure_paths()
     from aao.ui.settings_page import load_settings
@@ -439,4 +471,17 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except Exception:
+        # 打包后提权重启的子进程崩溃看不到控制台，写 crash.log 到 exe 同级便于定位
+        import datetime
+        import traceback
+
+        crash_path = os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "crash.log")
+        with open(crash_path, "a", encoding="utf-8") as f:
+            f.write(f"\n==== {datetime.datetime.now()} ====\n")
+            traceback.print_exc(file=f)
+        raise
