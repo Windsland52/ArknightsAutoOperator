@@ -11,6 +11,7 @@ import asyncio
 import json
 import threading
 from collections.abc import Callable
+from typing import Any
 
 import websockets
 
@@ -56,7 +57,7 @@ class ApiServer:
                     websockets.broadcast(self._clients, msg)
                 await asyncio.sleep(interval)
 
-    async def _handler(self, ws) -> None:
+    async def _handler(self, ws: Any) -> None:
         self._clients.add(ws)
         try:
             await ws.wait_closed()

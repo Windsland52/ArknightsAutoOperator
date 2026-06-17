@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import urllib.request
+from collections.abc import Callable
 
 from aao import __version__
 from aao.resources import syncer
@@ -60,7 +61,7 @@ class UpdateChecker:
     def update_resources(
         self,
         force_remote: bool = True,
-        progress_cb=None,
+        progress_cb: Callable[[str], None] | None = None,
     ) -> None:
         """从远程更新全部资源（干员名 + 地图）。
 
@@ -81,7 +82,7 @@ class UpdateChecker:
         if progress_cb:
             progress_cb("资源更新完成")
 
-    def update_all(self, progress_cb=None) -> dict:
+    def update_all(self, progress_cb: Callable[[str], None] | None = None) -> dict:
         """检查软件更新 + 更新资源。
 
         Returns:

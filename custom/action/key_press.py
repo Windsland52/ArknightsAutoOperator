@@ -30,14 +30,9 @@ class KeyPressAction(CustomAction):
         raw = argv.custom_action_param
         logger.info("KeyPress 收到参数: %r", raw)
         try:
-            if isinstance(raw, dict):
-                params = raw
-            elif isinstance(raw, str):
-                params = json.loads(raw) if raw else {}
-                if isinstance(params, str):  # 双重 JSON 编码
-                    params = json.loads(params)
-            else:
-                params = {}
+            params = json.loads(raw) if raw else {}
+            if isinstance(params, str):  # 双重 JSON 编码
+                params = json.loads(params)
 
             key = params.get("key")
             interval_ms = int(params.get("interval_ms", 0))

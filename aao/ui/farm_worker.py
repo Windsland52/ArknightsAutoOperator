@@ -25,6 +25,8 @@ if TYPE_CHECKING:
     from maa.controller import Win32Controller
     from maa.tasker import Tasker
 
+    from custom.outcome import Outcome
+
 from aao.utils.logger import logger
 
 # 次数监控线程的轮询间隔（秒）
@@ -78,7 +80,7 @@ class FarmWorker(QObject):
         # （该轮 outcome="进行中"），故 sink 命中时再发 round_outcome 更新 UI 那一行。
         from custom.outcome import make_sink
 
-        def _on_outcome(outcome) -> None:
+        def _on_outcome(outcome: Outcome) -> None:
             self.round_outcome.emit(get_attempt_count(), outcome.value)
 
         sink, should_debug = make_sink(on_outcome=_on_outcome)
@@ -135,7 +137,7 @@ class FarmWorker(QObject):
         )
 
         detail = self._tasker.post_task("Farm", pipeline_override=pipeline).wait()
-        task_failed = bool(detail is None or detail.status.failed)
+        task_failed = bool(detail.status.failed)
 
         # 清回调，避免后续会话误触发
         ExecuteTimeline.on_round_finished = None

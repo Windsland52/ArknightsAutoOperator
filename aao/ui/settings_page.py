@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QObject, QThread, Signal
 from PySide6.QtWidgets import (
@@ -30,6 +31,9 @@ from aao.resources.syncer import sync_all
 from aao.resources.updater import UpdateChecker
 from aao.utils.logger import logger
 from aao.utils.runtime_paths import project_root
+
+if TYPE_CHECKING:
+    from PySide6.QtGui import QImage, QShowEvent
 
 
 def _settings_path():
@@ -91,7 +95,7 @@ class _PreviewWorker(QObject):
     got_image = Signal(object)  # QImage
     failed = Signal(str)
 
-    def __init__(self, hwnd):
+    def __init__(self, hwnd: Any):
         super().__init__()
         self._hwnd = hwnd
 
@@ -106,7 +110,7 @@ class _PreviewWorker(QObject):
                 self.failed.emit("连接窗口失败")
                 return
             img = ctrl.post_screencap().wait().get()
-            if img is None:
+            if img is None:  # pyright: ignore[reportUnnecessaryComparison]  # MAA .get() 运行时可能 None（截图失败），存根未标 Optional
                 self.failed.emit("截图失败")
                 return
             # MAA 截图返回 numpy HxWxC(BGR)；转 QImage
@@ -132,7 +136,7 @@ class SettingsPage(QWidget):
         self._build_ui()
         self._load()
 
-    def showEvent(self, event) -> None:  # noqa: D401
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: D401
         # 每次切到设置页自动刷新窗口列表
         self._refresh_windows()
         super().showEvent(event)
@@ -299,7 +303,7 @@ class SettingsPage(QWidget):
         self._preview_thread.finished.connect(self._cleanup_preview_thread)
         self._preview_thread.start()
 
-    def _show_preview(self, qimg) -> None:
+    def _show_preview(self, qimg: QImage) -> None:
         from PySide6.QtGui import QPixmap
         from PySide6.QtWidgets import QDialog, QLabel, QVBoxLayout
 

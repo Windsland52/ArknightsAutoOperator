@@ -27,7 +27,7 @@ _WINDOW_TITLE_FRAGMENT = "明日方舟"
 _SHORT_SIDE = 720
 
 
-def list_game_windows(Toolkit) -> list[Any]:
+def list_game_windows(Toolkit: Any) -> list[Any]:
     """列出所有名字含「明日方舟」的桌面窗口（DesktopWindow 列表）。"""
     wins = Toolkit.find_desktop_windows()
     return [w for w in wins if _WINDOW_TITLE_FRAGMENT in (w.window_name or "")]
@@ -50,7 +50,7 @@ def _match_window(
 
 
 def connect_window(
-    Toolkit,
+    Toolkit: Any,
     prefer_name: str | None = None,
     prefer_class: str | None = None,
 ) -> Win32Controller | None:
@@ -84,7 +84,7 @@ def connect_window(
     return ctrl
 
 
-def connect_hwnd(Toolkit, hwnd: Any) -> Win32Controller | None:
+def connect_hwnd(Toolkit: Any, hwnd: Any) -> Win32Controller | None:
     """按 hwnd 连接窗口（用于设置页预览截图，不存偏好）。"""
     from maa.controller import (
         MaaWin32InputMethodEnum,

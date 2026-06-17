@@ -9,12 +9,16 @@ from __future__ import annotations
 
 import threading
 import time
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, Signal
 
 from aao.core.timing.calibration import FullCalibrationData
 from aao.core.timing.time_source import TimeSource
 from aao.utils.logger import logger
+
+if TYPE_CHECKING:
+    from maa.controller import Win32Controller
 
 
 class MeasurementWorker(QObject):
@@ -24,7 +28,7 @@ class MeasurementWorker(QObject):
 
     def __init__(
         self,
-        controller,
+        controller: Win32Controller,
         calibration: FullCalibrationData,
         profile_name: str = "",
         interval_s: float = 1 / 60,

@@ -55,7 +55,7 @@ def _maybe_count_attempt() -> None:
     logger.info("▶ 第 %d 次凹图尝试", _attempt_count)
 
 
-def _resolve_timeline_path(timeline_path: str) -> Path:
+def resolve_timeline_path(timeline_path: str) -> Path:
     """timeline_path 纯文件名 → config/timelines/ 下；带路径 → 相对项目根。"""
     p = Path(timeline_path)
     if p.is_absolute():
@@ -70,7 +70,7 @@ def _load_timeline_data(timeline_path: str | None) -> dict | None:
     if not timeline_path:
         logger.error("timeline_path 为空")
         return None
-    p = _resolve_timeline_path(timeline_path)
+    p = resolve_timeline_path(timeline_path)
     if not p.exists():
         logger.error("时间轴文件不存在: %s", p)
         return None

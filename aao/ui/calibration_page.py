@@ -12,6 +12,8 @@ capture_fn 用 controller.post_screencap 截图。
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from PySide6.QtCore import QObject, QThread, Signal
 from PySide6.QtWidgets import (
     QFormLayout,
@@ -31,6 +33,9 @@ from aao import config
 from aao.core.timing import calibration
 from aao.utils.logger import logger
 
+if TYPE_CHECKING:
+    from aao.core.timing.calibration import FullCalibrationData
+
 
 class _CalibWorker(QObject):
     """后台跑 calibration.calibrate。"""
@@ -40,7 +45,7 @@ class _CalibWorker(QObject):
     finished_ok = Signal(object)  # FullCalibrationData
     failed = Signal(str)
 
-    def __init__(self, controller, num_cycles: int):
+    def __init__(self, controller: Any, num_cycles: int):
         super().__init__()
         self._controller = controller
         self._num_cycles = num_cycles
@@ -136,7 +141,7 @@ class CalibrationPage(QWidget):
         self.btn_start.clicked.connect(self._on_start)
         self.btn_stop.clicked.connect(self._on_stop)
 
-    def set_runtime(self, controller) -> None:
+    def set_runtime(self, controller: Any) -> None:
         self._controller = controller
 
     def _on_start(self) -> None:
@@ -177,7 +182,7 @@ class CalibrationPage(QWidget):
             self.txt_log.append("正在取消（等待当前采样点完成）…")
             self._worker.cancel()
 
-    def _on_done(self, data) -> None:
+    def _on_done(self, data: FullCalibrationData) -> None:
         name = self.edit_name.text().strip() or "calib"
         try:
             filename = calibration.save(data, name)

@@ -81,18 +81,28 @@ def make_sink(on_outcome: Callable[[Outcome], None] | None = None):
     再改 True。
     """
     global _on_outcome_cb
-    from maa.context import ContextEventSink, NotificationType
+    from maa.context import Context, ContextEventSink, NotificationType
 
     _on_outcome_cb = on_outcome
 
     class _Sink(ContextEventSink):
-        def on_node_next_list(self, context, noti_type, detail):
+        def on_node_next_list(
+            self,
+            context: Context,
+            noti_type: NotificationType,
+            detail: ContextEventSink.NodeNextListDetail,
+        ) -> None:
             try:
                 set_outcome(detail.name)
             except Exception:  # noqa: BLE001
                 logger.exception("sink on_node_next_list 处理失败")
 
-        def on_node_recognition(self, context, noti_type, detail):
+        def on_node_recognition(
+            self,
+            context: Context,
+            noti_type: NotificationType,
+            detail: ContextEventSink.NodeRecognitionDetail,
+        ) -> None:
             # 结算判定节点（LeakDetect/Stars3/StarsNo3/MissionFailed）是
             # recognition 命中才进 next，命中时 noti_type=Succeeded，记一次。
             try:

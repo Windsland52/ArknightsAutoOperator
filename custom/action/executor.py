@@ -186,9 +186,9 @@ class ExecuteTimeline(CustomAction):
 
     def _load_timeline_file(self, path: str) -> dict | None:
         """加载时间轴 JSON（纯文件名→config/timelines/，带路径→相对项目根）。"""
-        from custom.reco.click_stage import _resolve_timeline_path
+        from custom.reco.click_stage import resolve_timeline_path
 
-        p = _resolve_timeline_path(path)
+        p = resolve_timeline_path(path)
         if not p.exists():
             logger.error("时间轴文件不存在: %s", p)
             return None
@@ -316,7 +316,7 @@ class ExecuteTimeline(CustomAction):
         ctrl: Controller,
         ts: TimeSource,
         target_frame: int,
-        context_tasker_stopping,
+        context_tasker_stopping: Callable[[], bool],
     ) -> None:
         """等待直到累计帧到达 target_frame（运行态）。期间每 1s 检测一次漏怪。"""
         deadline = time.time() + 120

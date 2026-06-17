@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from typing import Any
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _ROOT not in sys.path:
@@ -28,7 +29,7 @@ from aao.utils.logger import logger, setup_logging  # noqa: E402
 from aao.utils.runtime_paths import configure_paths  # noqa: E402
 
 
-def _connect_win32(Toolkit):
+def _connect_win32(Toolkit: Any):
     from maa.controller import (
         MaaWin32InputMethodEnum,
         MaaWin32ScreencapMethodEnum,

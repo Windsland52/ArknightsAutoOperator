@@ -18,12 +18,20 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from maa.controller import Win32Controller
+    from maa.tasker import Tasker
+    from PySide6.QtGui import QCloseEvent
+
+    from aao.core.timing.calibration import FullCalibrationData
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from PySide6.QtCore import Qt, QThread, QTimer  # noqa: E402
+from PySide6.QtCore import QThread, QTimer  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QHBoxLayout,
@@ -33,7 +41,6 @@ from PySide6.QtWidgets import (  # noqa: E402
     QMainWindow,
     QMessageBox,
     QStackedWidget,
-    QVBoxLayout,
     QWidget,
 )
 
@@ -72,11 +79,6 @@ except (ImportError, OSError):
         return False
 
 
-def _placeholder_page(text: str) -> QWidget:
-    w = QWidget()
-    lay = QVBoxLayout(w)
-    lay.addWidget(QLabel(text), alignment=Qt.AlignmentFlag.AlignCenter)
-    return w
 
 
 class MainWindow(QMainWindow):
@@ -84,9 +86,9 @@ class MainWindow(QMainWindow):
 
     def __init__(
         self,
-        controller,
-        tasker,
-        calibration_data,
+        controller: Win32Controller | None,
+        tasker: Tasker | None,
+        calibration_data: FullCalibrationData | None,
         profile_name: str,
         no_api: bool,
         port: int,
@@ -223,16 +225,10 @@ class MainWindow(QMainWindow):
     def set_log_handler(self, handler: QtLogHandler) -> None:
         self.farm_page.set_log_handler(handler)
 
-    def closeEvent(self, event) -> None:  # noqa: D401
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: D401
         self.hotkey_timer.stop()
         # 若凹图在跑，先请求停止并等其 worker 线程退出，避免 QThread 悬空
-        fw = self.farm_page._worker  # noqa: SLF001
-        ft = self.farm_page._thread  # noqa: SLF001
-        if fw is not None:
-            fw.stop()
-        if ft is not None:
-            ft.quit()
-            ft.wait(10000)
+        self.farm_page.stop_and_wait()
         if self.worker is not None:
             self.worker.stop()
         if self.worker_thread is not None:

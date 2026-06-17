@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -29,6 +31,10 @@ from PySide6.QtWidgets import (
 from aao.core.timing.time_source import format_timer
 from aao.ui.farm_worker import FarmWorker
 from aao.utils.runtime_paths import project_root
+
+if TYPE_CHECKING:
+    from aao.ui.farm_worker import RoundResult
+    from aao.ui.log_handler import QtLogHandler
 
 
 class FarmPage(QWidget):
@@ -143,11 +149,11 @@ class FarmPage(QWidget):
 
     # --- 注入（由 MainWindow 调用）---
 
-    def set_runtime(self, controller, tasker) -> None:
+    def set_runtime(self, controller: Any, tasker: Any) -> None:
         self._controller = controller
         self._tasker = tasker
 
-    def set_log_handler(self, handler) -> None:
+    def set_log_handler(self, handler: QtLogHandler) -> None:
         """接 QtLogHandler 信号到日志面板。"""
         handler.log.connect(self.txt_log.appendPlainText)
 
@@ -200,7 +206,15 @@ class FarmPage(QWidget):
             self.lbl_state.setText("停止中…")
             self._worker.stop()
 
-    def _on_round_finished(self, result) -> None:
+    def stop_and_wait(self, timeout_ms: int = 10000) -> None:
+        """请求停止凹图并等待 worker 线程退出（关窗时由 MainWindow 调用）。"""
+        if self._worker is not None:
+            self._worker.stop()
+        if self._thread is not None:
+            self._thread.quit()
+            self._thread.wait(timeout_ms)
+
+    def _on_round_finished(self, result: RoundResult) -> None:
         n = result.attempt_count
         outcome = getattr(result, "outcome", None) or ("漏怪" if result.leaked else "未漏怪")
         timer = format_timer(result.elapsed_frames)

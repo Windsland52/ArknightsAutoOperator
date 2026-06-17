@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "明日方舟自动凹图 — MaaFramework 方案二 (pipeline + 进程内 custom action) + 费用条计时/悬浮窗/打轴对轴"
 requires-python = ">=3.13,<3.14"
 dependencies = [
-    "maafw>=0.0.0",
+    "maafw>=5.11,<6",
     "numpy>=2.0",
     "PySide6>=6.7",
     "websockets>=13.0",
@@ -37,4 +37,16 @@ select = ["E", "F", "I", "UP", "B"]
 include = ["custom", "aao"]
 extraPaths = ["custom", "aao"]
 pythonVersion = "3.13"
-typeCheckingMode = "basic"
+typeCheckingMode = "strict"
+
+# strict 下关闭因 maafw 第三方库存根缺失导致的类型未知噪音
+# （reportMissingTypeStubs / reportUnknown* / reportMissingTypeArgument），
+# 保留 strict 的其余实质检查（privateUsage / unnecessaryComparison / unusedFunction 等）。
+reportMissingTypeStubs = "none"
+reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownVariableType = "none"
+reportUnknownParameterType = "none"
+reportUnknownLambdaType = "none"
+reportMissingTypeArgument = "none"
+

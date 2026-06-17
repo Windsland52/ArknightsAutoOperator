@@ -10,7 +10,7 @@ QGraphicsScene 里 y 向下，故渲染时 row 越大越靠上 → y = (height-1
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QBrush, QColor, QFont, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import (
     QDialog,
     QGraphicsRectItem,
@@ -81,7 +81,7 @@ class _MapGrid(QGraphicsView):
 
         scene.setSceneRect(0, 0, self._width * _CELL, self._height * _CELL)
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         item = self.itemAt(event.pos())
         # 找到对应 rect
         for (c, r), rect in self._cell_items.items():

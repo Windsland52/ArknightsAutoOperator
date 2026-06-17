@@ -12,11 +12,12 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QBrush, QColor, QFont, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import (
     QGraphicsItem,
     QGraphicsRectItem,
     QGraphicsScene,
+    QGraphicsSceneMouseEvent,
     QGraphicsTextItem,
     QGraphicsView,
 )
@@ -64,7 +65,7 @@ class _NodeItem(QGraphicsRectItem):
         # 提示
         self.setToolTip(str(action))
 
-    def itemChange(self, change, value):
+    def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value: object) -> object:
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             # 限制只能水平移动，并写回 action.frame
             new_x = self.pos().x() + _NODE_W / 2
@@ -79,12 +80,12 @@ class _NodeItem(QGraphicsRectItem):
             self._canvas.node_moved.emit(self.action)
         return super().itemChange(change, value)
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             self._drag_start_x = self.pos().x()
         super().mousePressEvent(event)
 
-    def mouseReleaseEvent(self, event):
+    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         self._drag_start_x = None
         super().mouseReleaseEvent(event)
 
@@ -193,7 +194,7 @@ class TimelineCanvas(QGraphicsView):
 
     # --- 鼠标点击节点选中 ---
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event: QMouseEvent) -> None:
         item = self.itemAt(event.pos())
         if isinstance(item, _NodeItem):
             self.node_clicked.emit(item.action)
