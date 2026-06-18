@@ -21,10 +21,10 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QMessageBox,
-    QPlainTextEdit,
     QPushButton,
     QRadioButton,
     QSplitter,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -124,9 +124,9 @@ class FarmPage(QWidget):
 
         log_box = QGroupBox("日志")
         ll = QVBoxLayout(log_box)
-        self.txt_log = QPlainTextEdit()
+        self.txt_log = QTextEdit()
         self.txt_log.setReadOnly(True)
-        self.txt_log.setMaximumBlockCount(2000)
+        self.txt_log.document().setMaximumBlockCount(2000)
         ll.addWidget(self.txt_log)
         splitter.addWidget(log_box)
 
@@ -169,8 +169,8 @@ class FarmPage(QWidget):
         self._tasker = tasker
 
     def set_log_handler(self, handler: QtLogHandler) -> None:
-        """接 QtLogHandler 信号到日志面板。"""
-        handler.log.connect(self.txt_log.appendPlainText)
+        """接 QtLogHandler 信号到日志面板（HTML，按日志等级着色）。"""
+        handler.log_html.connect(self.txt_log.append)
 
     # --- 控制 ---
 
