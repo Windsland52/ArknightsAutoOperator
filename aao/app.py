@@ -232,7 +232,7 @@ class MainWindow(QMainWindow):
             self.worker.state_changed.connect(self._on_measure_state)
             self.worker_thread.start()
 
-        self.status_conn.setText("● 已连接")
+        self._set_connection_status("已连接", "#4caf50")
         self.status_profile.setText(f"profile: {self._profile_name}")
         return True
 
@@ -307,7 +307,11 @@ class MainWindow(QMainWindow):
 
         # 状态栏
         connected = self._controller is not None
-        self.status_conn = QLabel("● 已连接" if connected else "○ 未连接")
+        self.status_conn = QLabel()
+        if connected:
+            self._set_connection_status("已连接", "#4caf50")
+        else:
+            self._set_connection_status("未连接", "#f44336")
         self.status_profile = QLabel(f"profile: {self._profile_name}")
         self.status_attempt = QLabel("第 0 次")
         self.status_timer = QLabel("--:--:--")
@@ -316,6 +320,11 @@ class MainWindow(QMainWindow):
         sb.addWidget(self.status_profile)
         sb.addWidget(self.status_attempt)
         sb.addPermanentWidget(self.status_timer)
+
+    def _set_connection_status(self, text: str, color: str) -> None:
+        """设置状态栏连接状态，圆点按状态着色。"""
+        self.status_conn.setText(f"● {text}")
+        self.status_conn.setStyleSheet(f"color: {color}; font-weight: bold;")
 
     # --- 测量状态更新 ---
 
@@ -336,11 +345,11 @@ class MainWindow(QMainWindow):
         if busy:
             self.hotkey_timer.stop()
             self.editor_page.setEnabled(False)
-            self.status_conn.setText("● 凹图运行中")
+            self._set_connection_status("凹图运行中", "#ff9800")
         else:
             self.hotkey_timer.start(16)
             self.editor_page.setEnabled(True)
-            self.status_conn.setText("● 已连接")
+            self._set_connection_status("已连接", "#4caf50")
 
     def _poll_hotkeys(self) -> None:
         if self._busy or self._editor is None:
