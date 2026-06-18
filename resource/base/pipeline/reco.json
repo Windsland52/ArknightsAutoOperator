@@ -41,5 +41,20 @@
         "desc": "关卡列表 OCR 关卡名/代号",
         "recognition": "OCR",
         "expected_code": "由 ClickStage custom recognition 动态覆盖"
+    },
+    "BattlePaused": {
+        "desc": "检测游戏是否处于暂停状态（暂停标志）",
+        "recognition": "TemplateMatch",
+        "roi": [
+            1194,
+            31,
+            41,
+            35
+        ],
+        "template": [
+            "Play.png"
+        ],
+        "method": 10001,
+        "threshold": 0.8
     }
 }

@@ -293,9 +293,8 @@ class ExecuteTimeline(CustomAction):
             if self._leaked:
                 return  # 漏怪，跳过本动作的暂停/逐帧/操作
 
-        # 到达 bullet 阈值 → 暂停（AFA F 键）
-        self._pause()
-        time.sleep(config.GENERAL_WAIT_MS / 1000)
+        # 到达 bullet 阈值 → 暂停（所有暂停都用模板验证）
+        self._pause(context, ctrl)
 
         # 逐帧步进到目标
         self._step_to_frames(ctrl, ts, target_frame)
@@ -367,14 +366,28 @@ class ExecuteTimeline(CustomAction):
         )
         return bool(reco and reco.hit)
 
-    # --- 暂停状态机（经 AFA 热键） ---
+    # --- 暂停状态机（经 AFA 热键 + 模板验证） ---
 
-    def _pause(self) -> None:
-        """暂停游戏。幂等：已暂停则不发。"""
+    def _pause(self, context: Context, ctrl: Controller) -> None:
+        """暂停游戏并验证：循环发 ESC 直到模板匹配到暂停标志。
+
+        幂等：已暂停则不发。所有暂停都验证——pause invariant 是帧级执行的基础，
+        一旦没真暂停后续逐帧/部署/技能全错。
+        """
         if self._paused:
             return
-        afa_hotkey.tap_key(afa_hotkey.VK_F)  # AFA: 按下暂停（ESC 脉冲）
-        self._paused = True
+        max_retries = 20
+        for i in range(max_retries):
+            afa_hotkey.tap_key(afa_hotkey.VK_F)
+            self._paused = True
+            time.sleep(config.GENERAL_WAIT_MS / 1000)
+            img = ctrl.post_screencap().wait().get()
+            reco = context.run_recognition("BattlePaused", img)
+            if reco and reco.hit:
+                logger.debug("暂停验证成功（模板命中）")
+                return
+            logger.warning("暂停未生效（模板未命中），重试 %d/%d", i + 1, max_retries)
+        logger.warning("暂停验证重试耗尽，继续执行（可能未真暂停）")
 
     def _resume(self) -> None:
         """恢复游戏运行。幂等：已运行则不发。"""
