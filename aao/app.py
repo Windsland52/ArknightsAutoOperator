@@ -142,6 +142,15 @@ class MainWindow(QMainWindow):
             self.nav.setCurrentRow(_PAGE_SETTINGS)
             logger.info("首次启动，引导到设置页")
 
+        # 系统托盘：关闭窗口=隐藏到托盘；托盘「退出」=真退出
+        from aao.ui.tray import TrayController
+
+        self._force_quit = False
+        self.tray = TrayController(self)
+        self.tray.show_requested.connect(self._restore_from_tray)
+        self.tray.quit_requested.connect(self._quit_from_tray)
+        self.tray.show()
+
     # --- 新手引导 ---
 
     @staticmethod
@@ -346,9 +355,26 @@ class MainWindow(QMainWindow):
     def set_log_handler(self, handler: QtLogHandler) -> None:
         self.farm_page.set_log_handler(handler)
 
+    def _restore_from_tray(self) -> None:
+        """从托盘还原窗口。"""
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _quit_from_tray(self) -> None:
+        """托盘「退出」：强制真退出。"""
+        self._force_quit = True
+        self.close()
+
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: D401
+        if not self._force_quit:
+            # 普通关闭=隐藏到托盘（不退出，凹图可继续）
+            event.ignore()
+            self.hide()
+            self.tray.show_message("ArknightsAutoOperator", "已在后台运行，双击托盘图标恢复。")
+            return
+        # 真退出：停所有 worker
         self.hotkey_timer.stop()
-        # 若凹图在跑，先请求停止并等其 worker 线程退出，避免 QThread 悬空
         self.farm_page.stop_and_wait()
         if self.worker is not None:
             self.worker.stop()
