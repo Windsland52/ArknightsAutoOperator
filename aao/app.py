@@ -161,30 +161,47 @@ class MainWindow(QMainWindow):
 
         return not load_settings().get("onboarded", False)
 
+    def _hide_overlay(self) -> None:
+        """临时隐藏悬浮窗（弹 QMessageBox 前调，避免遮挡）。"""
+        if self.overlay is not None:
+            self.overlay.hide()
+
+    def _show_overlay(self) -> None:
+        """恢复悬浮窗显示。"""
+        if self.overlay is not None:
+            self.overlay.show()
+
     def _on_window_configured(self) -> None:
         """设置页"设为默认窗口"后：按新窗口重连 controller/tasker 并注入各页；
         引导中则提示去校准并跳页。"""
-        ok = self._reconnect()
+        onboarding = self._needs_onboarding()
+        # 引导中不创建悬浮窗（避免遮挡后续 QMessageBox）
+        ok = self._reconnect(skip_overlay=onboarding)
         if not ok:
+            self._hide_overlay()
             QMessageBox.warning(
                 self,
                 "连接失败",
                 "未找到指定窗口，请确认游戏已启动且窗口选择正确。",
             )
+            self._show_overlay()
             return
-        if not self._needs_onboarding():
+        if not onboarding:
             return
+        self._hide_overlay()
         QMessageBox.information(
             self,
             "下一步：校准",
             "窗口已设置。请到「校准」页完成费用条校准后再凹图。",
         )
+        self._show_overlay()
         self.nav.setCurrentRow(_PAGE_CALIB)
 
-    def _reconnect(self) -> bool:
+    def _reconnect(self, skip_overlay: bool = False) -> bool:
         """按 settings.json 的 window_name/class 重连 controller + 重建 tasker，
         注入凹图页/校准页，并（若有校准）启 measure worker。返回是否连上。
 
+        skip_overlay=True 时不创建/显示悬浮窗（新手引导时避免遮挡对话框）。
         同步执行（连窗口+post_bundle 约 1-2s，短暂卡 UI 可接受）。
         """
         from maa.toolkit import Toolkit
@@ -218,7 +235,7 @@ class MainWindow(QMainWindow):
         self.calib_page.set_runtime(controller)
 
         # 有校准则启 measure worker（供悬浮窗/打轴实时帧）
-        if self._calibration_data is not None:
+        if self._calibration_data is not None and not skip_overlay:
             if self.overlay is None:  # 首次启动 controller 为 None 时未建，此处补建
                 self.overlay = OverlayWindow()
                 self.overlay.show()
@@ -244,13 +261,15 @@ class MainWindow(QMainWindow):
             self.editor_page.set_profile(filename)
         except (OSError, ValueError):
             logger.exception("校准 %s 加载失败", filename)
+        onboarding = self._needs_onboarding()
         if self._controller is not None:
-            self._reconnect()  # 用新校准重启 measure worker
+            self._reconnect(skip_overlay=onboarding)
 
-        if not self._needs_onboarding():
+        if not onboarding:
             return
         from aao.ui.settings_page import load_settings, save_settings
 
+        self._hide_overlay()
         QMessageBox.information(
             self,
             "可以凹图了",
@@ -479,7 +498,8 @@ def main() -> int:
 
     app = QApplication(sys.argv)
 
-    # 校准加载：目录无任何 .json → 弹窗提示先校准，UI 仍启动（measure worker 跳过）
+    # 校准加载：无校准则 data=None，MainWindow 会跳过 measure worker/悬浮窗，
+    # 引导流程（首次→设置页→连接→校准）自然覆盖，不需要 pre-window 弹窗。
     calib_dir = calibration.calibration_dir()
     has_calib = any(calib_dir.glob("*.json"))
     data = None
@@ -489,17 +509,6 @@ def main() -> int:
             logger.info("校准 %s：%d 档 (%s)", profile, len(data.profiles), data.detection_mode)
         except (OSError, ValueError):
             logger.exception("校准 %s 加载失败，计时功能不可用", profile)
-            QMessageBox.warning(
-                None,
-                "校准加载失败",
-                f"校准文件 {profile} 加载失败，计时/凹图功能不可用。\n请到「校准」页重新校准。",
-            )
-    else:
-        QMessageBox.information(
-            None,
-            "未校准",
-            "尚未进行费用条校准，计时与凹图功能不可用。\n请到「校准」页完成校准后再使用。",
-        )
 
     window = MainWindow(controller, tasker, data, profile, args.no_api, args.port)
 
