@@ -27,10 +27,10 @@ _MAA_ROOT = Path("../MaaAssistantArknights")
 _BATTLE_DATA_LOCAL = _MAA_ROOT / "resource" / "battle_data.json"
 _TILE_POS_LOCAL = _MAA_ROOT / "resource" / "Arknights-Tile-Pos"
 
-# 远程源（用户环境）
-_GITHUB = "https://raw.githubusercontent.com/MaaAssistantArknights/MaaAssistantArknights/main"
+# 远程源（用户环境）—— MAA 资源已移至 dev-v2 分支（main 分支无 battle_data / Tile-Pos）
+_GITHUB = "https://raw.githubusercontent.com/MaaAssistantArknights/MaaAssistantArknights/dev-v2"
 _BATTLE_DATA_REMOTE = f"{_GITHUB}/resource/battle_data.json"
-_TILE_POS_API = "https://api.github.com/repos/MaaAssistantArknights/MaaAssistantArknights/contents/resource/Arknights-Tile-Pos"
+_TILE_POS_API = "https://api.github.com/repos/MaaAssistantArknights/MaaAssistantArknights/contents/resource/Arknights-Tile-Pos?ref=dev-v2"
 
 
 def _download(url: str, dest: Path) -> bool:
