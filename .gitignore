@@ -31,8 +31,9 @@ resource/base/model/ocr/
 # Runtime config (calibration profiles, controller settings, ...)
 config/
 
-# Generated game data (run: uv run python -m akop.resources.syncer)
+# Generated game data (run: uv run python -m aao.resources.syncer)
 data/map/
+data/.battle_data.json
 resource/base/image/avatar/
 
 # Reference projects (local clones, not part of this repo)
