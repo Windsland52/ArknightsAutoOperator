@@ -45,7 +45,7 @@ PIXEL_TOLERANCE = 5  # frame-map nearest-match tolerance
 FRAMES_PER_SECOND = 30
 TICK_MAX_DEFAULT = 30  # 1s = 30 ticks
 
-BULLET_THRESHOLD = 15  # frames before target → enter bullet time
+BULLET_THRESHOLD = 2  # frames before target → enter bullet time
 SPEED_UP_THRESHOLD = 90  # 距目标超此帧数 → 开 2 倍速（远了加速省时）
 FRAME_THRESHOLD = 2  # frames before target → frame-by-frame
 MINIMUM_WAIT_MS = 20
