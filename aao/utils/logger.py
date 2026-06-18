@@ -91,23 +91,28 @@ def setup_logging(level: str = "INFO", log_dir: str | Path = _DEFAULT_LOG_DIR) -
         level: 控制台/UI 显示级别（"DEBUG"/"INFO"/...）；文件始终 DEBUG。
         log_dir: 日志文件目录。
     """
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")  # pyright: ignore[reportAttributeAccessIssue]
-    except AttributeError:
-        pass
+    # windowed 打包(console=False)下 sys.stdout 为 None，跳过控制台 sink
+    # （日志仍写文件 + UI 面板）
+    has_console = sys.stdout is not None
+    if has_console:
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")  # pyright: ignore[reportAttributeAccessIssue]
+        except AttributeError:
+            pass
 
     log_path = Path(log_dir)
     log_path.mkdir(parents=True, exist_ok=True)
 
     _loguru_logger.remove()
 
-    # 用户显示 sink：控制台，仅消息，去来源
-    _loguru_logger.add(
-        sys.stdout,
-        format=_CONSOLE_FORMAT,
-        level=level,
-        colorize=True,
-    )
+    # 用户显示 sink：控制台，仅消息，去来源（windowed 下无控制台则跳过）
+    if has_console:
+        _loguru_logger.add(
+            sys.stdout,
+            format=_CONSOLE_FORMAT,
+            level=level,
+            colorize=True,
+        )
 
     # 文件 sink：完整含来源，DEBUG，按天轮转 + 保留 2 周 + 压缩
     _loguru_logger.add(

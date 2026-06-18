@@ -138,8 +138,7 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name="aao.app",
-    # debug=False,  # 稳定后改 True 去掉控制台（windowed 模式）
-    console=True,  # 调试期保留控制台看 loguru 输出
+    console=False,  # windowed 模式：无控制台黑窗。日志靠 debug/aao/*.log + UI 面板 + crash.log
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
