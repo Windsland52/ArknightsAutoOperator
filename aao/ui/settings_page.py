@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -134,6 +134,7 @@ class SettingsPage(QWidget):
         super().__init__()
         self._worker: _ResourceWorker | None = None
         self._thread: QThread | None = None
+        self._auto_preview_done = False
         self._build_ui()
         self._load()
 
@@ -141,10 +142,48 @@ class SettingsPage(QWidget):
         # 切到设置页自动刷新窗口列表 + profile 下拉（新校准的立即可见）
         self._refresh_windows()
         self._load_profiles()
+        # 默认窗口存在时，首次进入设置页自动截一次预览；后续由用户点“刷新截图”更新
+        if not self._auto_preview_done and self._selected_window() is not None:
+            self._auto_preview_done = True
+            self._preview_window()
         super().showEvent(event)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
+
+        # --- 游戏窗口选择 ---
+        win_box = QGroupBox("游戏窗口（多个「明日方舟」窗口时需指定）")
+        win_layout = QHBoxLayout(win_box)
+
+        # 左侧：截图预览
+        self.lbl_preview = QLabel("未预览")
+        self.lbl_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_preview.setMinimumSize(320, 180)
+        self.lbl_preview.setStyleSheet("background:#1f1f1f; color:#9aa0a6; border:1px solid #444;")
+        win_layout.addWidget(self.lbl_preview, 1)
+
+        # 右侧：窗口列表 + 操作按钮 + 状态
+        right = QVBoxLayout()
+        self.list_windows = QListWidget()
+        self.list_windows.setMinimumWidth(320)
+        self.list_windows.setMaximumHeight(140)
+        right.addWidget(self.list_windows)
+
+        win_btn_row = QHBoxLayout()
+        self.btn_refresh_win = QPushButton("🔄 刷新列表")
+        self.btn_preview = QPushButton("📸 刷新截图")
+        self.btn_save_win = QPushButton("✓ 设为默认")
+        for b in (self.btn_refresh_win, self.btn_preview, self.btn_save_win):
+            win_btn_row.addWidget(b)
+        win_btn_row.addStretch()
+        right.addLayout(win_btn_row)
+        self.lbl_win_status = QLabel("未选择")
+        self.lbl_win_status.setStyleSheet("color: #9aa0a6;")
+        right.addWidget(self.lbl_win_status)
+        right.addStretch()
+
+        win_layout.addLayout(right, 2)
+        root.addWidget(win_box)
 
         # --- 运行设置 ---
         run_box = QGroupBox("运行设置")
@@ -169,25 +208,6 @@ class SettingsPage(QWidget):
         self.btn_save = QPushButton("💾 保存设置")
         form.addRow(self.btn_save)
         root.addWidget(run_box)
-
-        # --- 游戏窗口选择 ---
-        win_box = QGroupBox("游戏窗口（多个「明日方舟」窗口时需指定）")
-        wl = QVBoxLayout(win_box)
-        self.list_windows = QListWidget()
-        self.list_windows.setMaximumHeight(120)
-        wl.addWidget(self.list_windows)
-        win_btn_row = QHBoxLayout()
-        self.btn_refresh_win = QPushButton("🔄 刷新列表")
-        self.btn_preview = QPushButton("📸 预览截图")
-        self.btn_save_win = QPushButton("✓ 设为默认")
-        for b in (self.btn_refresh_win, self.btn_preview, self.btn_save_win):
-            win_btn_row.addWidget(b)
-        win_btn_row.addStretch()
-        wl.addLayout(win_btn_row)
-        self.lbl_win_status = QLabel("未选择")
-        self.lbl_win_status.setStyleSheet("color: #9aa0a6;")
-        wl.addWidget(self.lbl_win_status)
-        root.addWidget(win_box)
 
         # --- 资源 ---
         res_box = QGroupBox("资源（干员名 / 地图）")
@@ -269,14 +289,19 @@ class SettingsPage(QWidget):
             return
         saved = load_settings()
         saved_name = saved.get("window_name")
-        for w in wins:
+        saved_class = saved.get("window_class")
+        saved_row = -1
+        for i, w in enumerate(wins):
             text = f"{w.window_name}  [类: {w.class_name}]"
             item = QListWidgetItem(text)
-            if w.window_name == saved_name:
+            if w.window_name == saved_name and (not saved_class or w.class_name == saved_class):
                 # 标记当前默认
                 item.setText("★ " + text)
+                saved_row = i
             self.list_windows.addItem(item)
             self._windows.append(w)
+        if saved_row >= 0:
+            self.list_windows.setCurrentRow(saved_row)
         self.lbl_win_status.setText(f"找到 {len(wins)} 个窗口，选中后可预览/设为默认")
 
     def _selected_window(self):
@@ -286,7 +311,7 @@ class SettingsPage(QWidget):
         return self._windows[row]
 
     def _preview_window(self) -> None:
-        """对选中窗口截图，弹窗预览（后台线程避免卡 UI）。"""
+        """对选中窗口截图，并嵌入显示在游戏窗口设置区（后台线程避免卡 UI）。"""
         w = self._selected_window()
         if w is None:
             self.lbl_win_status.setText("请先在列表选中一个窗口")
@@ -308,21 +333,20 @@ class SettingsPage(QWidget):
 
     def _show_preview(self, qimg: QImage) -> None:
         from PySide6.QtGui import QPixmap
-        from PySide6.QtWidgets import QDialog, QLabel, QVBoxLayout
 
-        dlg = QDialog(self)
-        dlg.setWindowTitle("窗口截图预览")
-        lbl = QLabel()
         pix = QPixmap.fromImage(qimg)
-        if pix.width() > 800:  # 缩放到合理大小预览
-            pix = pix.scaledToWidth(800)
-        lbl.setPixmap(pix)
-        lay = QVBoxLayout(dlg)
-        lay.addWidget(lbl)
-        self.lbl_win_status.setText("预览已生成，确认是对的画面后可设为默认")
-        dlg.exec()
+        target_w = max(320, self.lbl_preview.width() - 12)
+        if pix.width() > target_w:
+            pix = pix.scaledToWidth(target_w, Qt.TransformationMode.SmoothTransformation)
+        self.lbl_preview.setPixmap(pix)
+        self.lbl_preview.setText("")
+        self.lbl_win_status.setText("预览已更新，确认是对的画面后可设为默认")
 
     def _on_preview_failed(self, msg: str) -> None:
+        from PySide6.QtGui import QPixmap
+
+        self.lbl_preview.setPixmap(QPixmap())
+        self.lbl_preview.setText("预览失败")
         self.lbl_win_status.setText(f"预览失败: {msg}")
 
     def _save_window(self) -> None:
