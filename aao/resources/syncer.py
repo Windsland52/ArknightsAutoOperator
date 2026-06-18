@@ -51,6 +51,20 @@ def _settings_proxy() -> str | None:
         return None
 
 
+def _settings_github_token() -> str | None:
+    """从 settings.json 读取并解密 GitHub token（可选）。"""
+    try:
+        from aao.utils.secure_store import decrypt_text
+
+        path = project_root() / "config" / "settings.json"
+        if not path.exists():
+            return None
+        enc = json.loads(path.read_text(encoding="utf-8")).get("github_token_enc", "")
+        return decrypt_text(str(enc)) if enc else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _make_opener(proxy: str | None = None) -> urllib.request.OpenerDirector:
     """构造 urllib opener。proxy 显式传入优先；否则使用系统/环境代理。"""
     if proxy:
@@ -62,9 +76,19 @@ def _make_opener(proxy: str | None = None) -> urllib.request.OpenerDirector:
     return urllib.request.build_opener()
 
 
-def _download(opener: urllib.request.OpenerDirector, url: str, dest: Path) -> bool:
+def _make_request(url: str, token: str | None = None) -> urllib.request.Request:
+    req = urllib.request.Request(url)
+    req.add_header("User-Agent", "ArknightsAutoOperator")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    return req
+
+
+def _download(
+    opener: urllib.request.OpenerDirector, url: str, dest: Path, token: str | None = None
+) -> bool:
     try:
-        with opener.open(url, timeout=30) as resp:
+        with opener.open(_make_request(url, token), timeout=30) as resp:
             data = resp.read()
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(dest.suffix + ".tmp")
@@ -77,7 +101,7 @@ def _download(opener: urllib.request.OpenerDirector, url: str, dest: Path) -> bo
 
 
 def _get_battle_data(
-    opener: urllib.request.OpenerDirector, force_remote: bool = False
+    opener: urllib.request.OpenerDirector, force_remote: bool = False, token: str | None = None
 ) -> dict[str, Any] | None:
     """获取 battle_data.json（本地优先，远程回退）。"""
     if not force_remote and _BATTLE_DATA_LOCAL.exists():
@@ -86,7 +110,7 @@ def _get_battle_data(
     logger.info("从 GitHub 下载 battle_data.json...")
     tmp = project_root() / "data" / ".battle_data.json"
     tmp.parent.mkdir(parents=True, exist_ok=True)
-    if _download(opener, _BATTLE_DATA_REMOTE, tmp):
+    if _download(opener, _BATTLE_DATA_REMOTE, tmp, token=token):
         return json.loads(tmp.read_text(encoding="utf-8"))
     return None
 
@@ -96,7 +120,8 @@ def sync_operators(force_remote: bool = False, proxy: str | None = None) -> None
     data_dir.mkdir(parents=True, exist_ok=True)
 
     opener = _make_opener(proxy or _settings_proxy())
-    raw = _get_battle_data(opener, force_remote)
+    token = _settings_github_token()
+    raw = _get_battle_data(opener, force_remote, token=token)
     if raw is None:
         logger.error("无法获取 battle_data.json")
         return
@@ -134,10 +159,11 @@ def sync_maps(force_remote: bool = False, proxy: str | None = None) -> None:
     map_dir.mkdir(parents=True, exist_ok=True)
 
     opener = _make_opener(proxy or _settings_proxy())
+    token = _settings_github_token()
     if not force_remote and _TILE_POS_LOCAL.exists():
         count = _copy_maps_local(_TILE_POS_LOCAL, map_dir)
     else:
-        count = _download_maps_remote(map_dir, opener)
+        count = _download_maps_remote(map_dir, opener, token=token)
 
     codes: dict[str, str] = {}
     for p in map_dir.glob("*.json"):
@@ -176,7 +202,9 @@ def _load_manifest(path: Path) -> dict[str, str]:
         return {}
 
 
-def _download_maps_remote(dst_dir: Path, opener: urllib.request.OpenerDirector) -> int:
+def _download_maps_remote(
+    dst_dir: Path, opener: urllib.request.OpenerDirector, token: str | None = None
+) -> int:
     """从 GitHub API 批量下载地图文件。
 
     增量机制：GitHub Contents API 返回 sha；本地 .manifest.json 记录 sha。
@@ -184,7 +212,7 @@ def _download_maps_remote(dst_dir: Path, opener: urllib.request.OpenerDirector) 
     """
     logger.info("从 GitHub 下载地图列表...")
     try:
-        with opener.open(_TILE_POS_API, timeout=30) as resp:
+        with opener.open(_make_request(_TILE_POS_API, token), timeout=30) as resp:
             files = json.loads(resp.read())
     except Exception as e:  # noqa: BLE001
         logger.error("无法获取地图列表: %s", e)
@@ -213,7 +241,7 @@ def _download_maps_remote(dst_dir: Path, opener: urllib.request.OpenerDirector) 
         done = 0
         with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
             futs = {
-                pool.submit(_download, opener, url, dst): (name, sha)
+                pool.submit(_download, opener, url, dst, token): (name, sha)
                 for name, url, dst, sha in tasks
             }
             for fut in as_completed(futs):

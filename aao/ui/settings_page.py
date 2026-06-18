@@ -214,6 +214,15 @@ class SettingsPage(QWidget):
         self.edit_proxy = QLineEdit()
         self.edit_proxy.setPlaceholderText("可选，如 http://127.0.0.1:7890（资源同步/更新使用）")
         proxy_form.addRow("下载代理:", self.edit_proxy)
+        token_row = QHBoxLayout()
+        self.edit_github_token = QLineEdit()
+        self.edit_github_token.setPlaceholderText("可选，GitHub token（本机 DPAPI 加密保存）")
+        self.edit_github_token.setEchoMode(QLineEdit.EchoMode.Password)
+        self.btn_token_eye = QPushButton("👁")
+        self.btn_token_eye.setMaximumWidth(40)
+        token_row.addWidget(self.edit_github_token)
+        token_row.addWidget(self.btn_token_eye)
+        proxy_form.addRow("GitHub Token:", token_row)
         rl.addLayout(proxy_form)
         btn_row = QHBoxLayout()
         self.btn_sync = QPushButton("🔄 同步资源")
@@ -240,6 +249,7 @@ class SettingsPage(QWidget):
         self.btn_refresh_win.clicked.connect(self._refresh_windows)
         self.btn_preview.clicked.connect(self._preview_window)
         self.btn_save_win.clicked.connect(self._save_window)
+        self.btn_token_eye.clicked.connect(self._toggle_token_visible)
 
         self._windows: list = []  # DesktopWindow 列表（与 list_windows 行对应）
         self._preview_thread: QThread | None = None
@@ -371,6 +381,14 @@ class SettingsPage(QWidget):
         self._preview_worker = None
         self._preview_thread = None
 
+    def _toggle_token_visible(self) -> None:
+        if self.edit_github_token.echoMode() == QLineEdit.EchoMode.Password:
+            self.edit_github_token.setEchoMode(QLineEdit.EchoMode.Normal)
+            self.btn_token_eye.setText("🙈")
+        else:
+            self.edit_github_token.setEchoMode(QLineEdit.EchoMode.Password)
+            self.btn_token_eye.setText("👁")
+
     def _load(self) -> None:
         s = load_settings()
         if s.get("profile"):
@@ -380,6 +398,14 @@ class SettingsPage(QWidget):
         self.chk_api.setChecked(s.get("api", True))
         if s.get("proxy"):
             self.edit_proxy.setText(str(s["proxy"]))
+        if s.get("github_token_enc"):
+            try:
+                from aao.utils.secure_store import decrypt_text
+
+                self.edit_github_token.setText(decrypt_text(str(s["github_token_enc"])))
+            except Exception:  # noqa: BLE001
+                self.edit_github_token.clear()
+                self.lbl_op.setText("GitHub Token 解密失败，可重新填写")
 
     def _on_save(self) -> None:
         try:
@@ -396,8 +422,19 @@ class SettingsPage(QWidget):
                 "proxy": self.edit_proxy.text().strip(),
             }
         )
+        token = self.edit_github_token.text().strip()
+        if token:
+            try:
+                from aao.utils.secure_store import encrypt_text
+
+                data["github_token_enc"] = encrypt_text(token)
+            except Exception as e:  # noqa: BLE001
+                QMessageBox.warning(self, "Token 保存失败", f"GitHub Token 加密失败：{e}")
+                return
+        else:
+            data.pop("github_token_enc", None)
         save_settings(data)
-        self.lbl_op.setText("设置已保存（端口/profile/代理变更需重启或下次同步生效）")
+        self.lbl_op.setText("设置已保存（端口/profile/代理/Token 变更需重启或下次同步生效）")
         self.settings_changed.emit()
 
     def _run_resource(self, mode: str, force_remote: bool) -> None:
