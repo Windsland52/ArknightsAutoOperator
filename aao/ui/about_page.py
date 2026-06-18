@@ -19,8 +19,9 @@ class AboutPage(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+        root.setAlignment(Qt.AlignmentFlag.AlignTop)
         root.setSpacing(14)
+        root.setContentsMargins(40, 30, 40, 30)
 
         logo = QLabel()
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -35,7 +36,7 @@ class AboutPage(QWidget):
 
         desc = QLabel(
             "明日方舟 PC 官方客户端自动凹图工具。<br>"
-            "帧级自动操作 · 费用条计时 · 打轴对轴 · 循环重试<br>"
+            "帧级自动操作 · 费用条计时 · 打轴对轴 · 循环重试"
         )
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         desc.setWordWrap(True)
