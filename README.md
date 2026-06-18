@@ -1,9 +1,26 @@
+<!-- markdownlint-disable MD033 MD041 -->
+<div align="center">
+
+<img src="./logo.png" alt="ArknightsAutoOperator" width="160" />
+
 # ArknightsAutoOperator
 
-明日方舟自动凹图：帧级自动操作 + 费用条计时 + 打轴对轴。
+<p align="center">
+  <img alt="Python" src="https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white" />
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows-blue" />
+  <img alt="MaaFramework" src="https://img.shields.io/badge/MaaFramework-powered-7C3AED" />
+  <img alt="PySide6" src="https://img.shields.io/badge/UI-PySide6-41CD52?logo=qt&logoColor=white" />
+  <a href="https://github.com/Windsland52/ArknightsAutoOperator/actions/workflows/package-check.yml"><img alt="Package Check" src="https://github.com/Windsland52/ArknightsAutoOperator/actions/workflows/package-check.yml/badge.svg" /></a>
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/Windsland52/ArknightsAutoOperator" /></a>
+  <a href="https://github.com/Windsland52/ArknightsAutoOperator/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Windsland52/ArknightsAutoOperator?style=social" /></a>
+  <a href="https://github.com/Windsland52/ArknightsAutoOperator/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Windsland52/ArknightsAutoOperator/total?style=social" /></a>
+</p>
 
-MaaFramework **方案二**（JSON pipeline + 进程内 custom action）+ PySide6 单进程主控台 + loguru 日志。
-仅支持 **PC 官方客户端**（Win32，`Arknights.exe`），不再适配模拟器。
+明日方舟 帧级自动操作 + 费用条计时 + 打轴对轴 + 循环凹图<br>
+<a href="https://github.com/Windsland52/ArknightsAutoOperator" target="_blank"><b>🔗 本项目 GitHub 仓库</b></a><br>
+如果这个项目对你有帮助，欢迎在仓库右上角点个 Star ⭐
+
+</div>
 
 ## 功能
 
