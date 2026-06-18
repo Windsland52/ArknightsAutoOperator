@@ -5,8 +5,6 @@
 MaaFramework **方案二**（JSON pipeline + 进程内 custom action）+ PySide6 单进程主控台 + loguru 日志。
 仅支持 **PC 官方客户端**（Win32，`Arknights.exe`），不再适配模拟器。
 
-> 总体方案见 [`docs/rewrite-plan.md`](docs/rewrite-plan.md)。
-
 ## 功能
 
 - **凹图**：自动点关卡 → 开战 → 帧级执行时间轴 → 结算 → 三星停 / 非三星或漏怪放弃重试，循环到通关或达次数上限
