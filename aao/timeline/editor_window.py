@@ -215,6 +215,7 @@ class EditorWindow(QWidget):
         self.btn_apply.clicked.connect(self._on_apply)
         self.btn_delete.clicked.connect(self._on_delete)
         self.btn_pick.clicked.connect(self._on_pick_pos)
+        self.cb_type.currentTextChanged.connect(self._on_type_changed)
         self.table.currentItemChanged.connect(self._on_select)
         self.btn_cand_add.clicked.connect(self._add_candidate)
         self.btn_cand_del.clicked.connect(self._del_candidate)
@@ -361,7 +362,12 @@ class EditorWindow(QWidget):
             self.table.setItem(i, 1, QTableWidgetItem(a.action_type.value))
             self.table.setItem(i, 2, QTableWidgetItem(a.oper))
             self.table.setItem(i, 3, QTableWidgetItem(a.pos))
-            self.table.setItem(i, 4, QTableWidgetItem(a.direction.value))
+            # 部署才显示朝向，技能/撤退显示 —
+            if a.action_type == ActionType.DEPLOY and a.direction != DirectionType.NONE:
+                dir_text = a.direction.value
+            else:
+                dir_text = "—"
+            self.table.setItem(i, 4, QTableWidgetItem(dir_text))
         self.canvas.set_timeline(self.timeline)
 
     # --- canvas 回调 ---
@@ -395,6 +401,13 @@ class EditorWindow(QWidget):
                 self.edit_pos.setText(pos)
                 self.lbl_status.setText(f"已选位置 {pos}")
 
+    def _on_type_changed(self, type_text: str) -> None:
+        """动作类型变化 → 技能/撤退禁用朝向框。"""
+        is_deploy = type_text == "部署"
+        self.cb_dir.setEnabled(is_deploy)
+        if not is_deploy:
+            self.cb_dir.setCurrentText("无")
+
     def _on_select(self):
         row = self.table.currentRow()
         if row < 0 or row >= len(self.timeline.actions):
@@ -404,6 +417,7 @@ class EditorWindow(QWidget):
         self.cb_oper.setCurrentText(a.oper)
         self.edit_pos.setText(a.pos)
         self.cb_dir.setCurrentText(a.direction.value)
+        self._on_type_changed(a.action_type.value)
 
     def _on_apply(self):
         row = self.table.currentRow()
