@@ -201,10 +201,6 @@ class SettingsPage(QWidget):
         self.chk_api.setChecked(True)
         form.addRow(self.chk_api)
 
-        self.edit_proxy = QLineEdit()
-        self.edit_proxy.setPlaceholderText("可选，如 http://127.0.0.1:7890（资源同步/更新使用）")
-        form.addRow("下载代理:", self.edit_proxy)
-
         self.btn_save = QPushButton("💾 保存设置")
         form.addRow(self.btn_save)
         root.addWidget(run_box)
@@ -214,6 +210,11 @@ class SettingsPage(QWidget):
         rl = QVBoxLayout(res_box)
         self.lbl_res_status = QLabel(self._res_status_text())
         rl.addWidget(self.lbl_res_status)
+        proxy_form = QFormLayout()
+        self.edit_proxy = QLineEdit()
+        self.edit_proxy.setPlaceholderText("可选，如 http://127.0.0.1:7890（资源同步/更新使用）")
+        proxy_form.addRow("下载代理:", self.edit_proxy)
+        rl.addLayout(proxy_form)
         btn_row = QHBoxLayout()
         self.btn_sync = QPushButton("🔄 同步资源")
         self.btn_sync_remote = QPushButton("🌐 强制远程同步")
