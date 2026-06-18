@@ -50,6 +50,10 @@ class TrayController(QObject):
         """显示托盘图标。"""
         self._tray.show()
 
+    def hide(self) -> None:
+        """隐藏托盘图标。"""
+        self._tray.hide()
+
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         # 双击/中击 → 显示窗口
         if reason in (

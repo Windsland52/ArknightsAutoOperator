@@ -395,9 +395,17 @@ class MainWindow(QMainWindow):
         self.activateWindow()
 
     def _quit_from_tray(self) -> None:
-        """托盘「退出」：强制真退出。"""
+        """托盘「退出」：停所有 worker + 退出应用。"""
         self._force_quit = True
-        self.close()
+        self.hotkey_timer.stop()
+        self.farm_page.stop_and_wait()
+        if self.worker is not None:
+            self.worker.stop()
+        if self.worker_thread is not None:
+            self.worker_thread.quit()
+            self.worker_thread.wait()
+        self.tray.hide()
+        QApplication.quit()
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: D401
         if not self._force_quit:
@@ -406,7 +414,7 @@ class MainWindow(QMainWindow):
             self.hide()
             self.tray.show_message("ArknightsAutoOperator", "已在后台运行，双击托盘图标恢复。")
             return
-        # 真退出：停所有 worker
+        # 真退出（_quit_from_tray 已做清理，或窗口在可见时被强制关闭）
         self.hotkey_timer.stop()
         self.farm_page.stop_and_wait()
         if self.worker is not None:
