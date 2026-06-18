@@ -30,6 +30,8 @@ jobs:
         runs-on: windows-latest
         steps:
             - uses: actions/checkout@v6
+              with:
+                  submodules: true # 拉取 MaaCommonAssets（OCR 模型来源）
             - uses: actions/setup-python@v6
               with:
                   python-version: '3.13'
@@ -49,6 +51,8 @@ jobs:
                   Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
                   Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE" -ErrorAction SilentlyContinue
                   Write-Host "Defender realtime monitoring disabled for build"
+            - name: Configure OCR model
+              run: uv run python tools/configure.py
             - name: Convert logo.png to ico
               shell: bash
               run: uv run python -c "from PIL import Image; Image.open('logo.png').save('logo.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
