@@ -90,17 +90,28 @@ class ExecuteTimeline(CustomAction):
 
         # 优先 timeline_path（从文件加载，文件内含 map_code），兼容显式 timeline 数组
         timeline_path = params.get("timeline_path")
+        tl_calib = ""
         if timeline_path:
             tl = self._load_timeline_file(timeline_path)
             if tl is None:
                 return CustomAction.RunResult(success=False)
             raw_actions = tl.get("actions", [])
             map_code = params.get("map_code") or tl.get("map_code", "")
+            tl_calib = tl.get("calibration_profile", "")
         else:
             raw_actions = params.get("timeline", [])
             map_code = params.get("map_code", "")
 
         calib_file = params.get("calibration") or config.DEFAULT_CALIBRATION
+
+        # 校验：timeline 记录的校准 profile 与当前使用的是否一致（帧数偏差会导致漂移）
+        if tl_calib and tl_calib != calib_file:
+            logger.warning(
+                "⚠ 校准 profile 不匹配：timeline 用的是 %s，当前运行用的是 %s。"
+                "帧数可能不同（如 30f vs 31f），会导致时间轴漂移！",
+                tl_calib,
+                calib_file,
+            )
 
         if not raw_actions or not map_code:
             logger.error("缺少参数: 需要 timeline_path 或 (timeline + map_code)")

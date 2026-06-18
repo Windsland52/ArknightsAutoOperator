@@ -59,6 +59,7 @@ class EditorWindow(QWidget):
         self._current_frame = 0  # 实时帧（由外部更新）
         self._align_mode = False  # False=打轴（游标不跟随），True=对轴（游标跟实时帧）
         self._candidates: list[str] = []  # 候选干员/装置列表
+        self._profile_name = ""  # 当前校准 profile 文件名（由 MainWindow 注入）
 
         self.canvas = TimelineCanvas()
         self.canvas.node_clicked.connect(self._on_canvas_node_clicked)
@@ -430,11 +431,16 @@ class EditorWindow(QWidget):
         self._refresh_table()
         self.lbl_status.setText(f"已加载 {len(self.timeline.actions)} 个动作")
 
+    def set_profile(self, profile_name: str) -> None:
+        """注入当前校准 profile 文件名（打轴帧数依赖此 profile，保存时写入 timeline）。"""
+        self._profile_name = profile_name
+
     def _on_save(self):
         path, _ = QFileDialog.getSaveFileName(self, "保存时间轴", "", "JSON (*.json)")
         if not path:
             return
         self.timeline.map_code = self.edit_map.text().strip()
+        self.timeline.calibration_profile = self._profile_name
         self._collect_candidates()
         save_timeline(self.timeline, path)
         self.lbl_status.setText(f"已保存到 {path}")

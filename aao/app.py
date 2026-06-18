@@ -241,6 +241,7 @@ class MainWindow(QMainWindow):
         try:
             self._calibration_data = calibration.load(filename)
             self._profile_name = filename
+            self.editor_page.set_profile(filename)
         except (OSError, ValueError):
             logger.exception("校准 %s 加载失败", filename)
         if self._controller is not None:
@@ -282,6 +283,7 @@ class MainWindow(QMainWindow):
         self.farm_page.busy_changed.connect(self._set_busy)
 
         self.editor_page = EditorWindow()  # 打轴编辑器（已接入 canvas + 地图选点）
+        self.editor_page.set_profile(self._profile_name)
         self._editor = self.editor_page  # 供热键 mark_action
         self.calib_page = CalibrationPage()
         self.settings_page = SettingsPage()

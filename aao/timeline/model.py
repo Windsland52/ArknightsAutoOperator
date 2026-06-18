@@ -89,15 +89,19 @@ class Timeline:
     actions: list[TimelineAction] = field(default_factory=list)
     name: str = ""  # 用户可读名称
     candidates: list[str] = field(default_factory=list)  # 候选干员/装置名
+    calibration_profile: str = ""  # 打轴时用的校准 profile 文件名
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "map_code": self.map_code,
             "coordinate": self.coordinate,
             "name": self.name,
             "candidates": self.candidates,
             "actions": [a.to_dict() for a in self.actions],
         }
+        if self.calibration_profile:
+            d["calibration_profile"] = self.calibration_profile
+        return d
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Timeline:
@@ -106,6 +110,7 @@ class Timeline:
             coordinate=d.get("coordinate", "frame"),
             name=d.get("name", ""),
             candidates=d.get("candidates", []),
+            calibration_profile=d.get("calibration_profile", ""),
             actions=[TimelineAction.from_dict(a) for a in d.get("actions", [])],
         )
 
