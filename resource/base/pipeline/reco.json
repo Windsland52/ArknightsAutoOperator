@@ -1,0 +1,45 @@
+{
+    "DetectSlots": {
+        "desc": "检测待部署区所有干员槽位",
+        "recognition": "TemplateMatch",
+        "roi": [
+            33,
+            600,
+            1245,
+            18
+        ],
+        "template": "BattleOpersFlag.png",
+        "green_mask": true,
+        "threshold": 0.65,
+        "order_by": "Horizontal"
+    },
+    "MatchAvatar": {
+        "desc": "在指定槽位 ROI 内匹配头像缓存；roi 使用槽位 flag_rect，roi_offset 移到头像区域",
+        "recognition": "TemplateMatch",
+        "roi_offset": [
+            -35,
+            39,
+            45,
+            46
+        ],
+        "roi_code": "由 avatar.py 动态覆盖（槽位 flag_rect）",
+        "template_code": "avatar/{char_id}.png 由 avatar.py 动态覆盖"
+    },
+    "OcrOperName": {
+        "desc": "详情页 OCR 干员名",
+        "recognition": "OCR",
+        "roi": [
+            3,
+            195,
+            192,
+            35
+        ],
+        "threshold": 0.6,
+        "order_by": "Area"
+    },
+    "ClickStageMatch": {
+        "desc": "关卡列表 OCR 关卡名/代号",
+        "recognition": "OCR",
+        "expected_code": "由 ClickStage custom recognition 动态覆盖"
+    }
+}

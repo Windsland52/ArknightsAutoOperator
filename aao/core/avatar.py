@@ -22,10 +22,6 @@ if TYPE_CHECKING:
 from aao.utils.logger import logger
 
 # MAA 常量（1280×720）
-_FLAG_ROI = [33, 600, 1245, 18]
-_FLAG_THRESHOLD = 0.65
-_AVATAR_OFFSET = [-35, 39, 45, 46]  # BattleOperAvatar rectMove
-_NAME_ROI = [3, 195, 192, 35]  # BattleOperName OCR roi
 _DETAIL_WAIT = 0.5  # 等详情页打开
 
 
@@ -35,6 +31,22 @@ def _avatar_dir() -> Path:
     d = project_root() / "resource" / "base" / "image" / "avatar"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def _match_avatar_roi_offset() -> tuple[int, int, int, int]:
+    """读取 reco.json 中 MatchAvatar.roi_offset（flag_rect → avatar_rect）。"""
+    from aao.utils.runtime_paths import project_root
+
+    path = project_root() / "resource" / "base" / "pipeline" / "reco.json"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    offset = raw["MatchAvatar"].get("roi_offset", [0, 0, 0, 0])
+    return tuple(int(v) for v in offset)  # type: ignore[return-value]
+
+
+def _apply_roi_offset(rect: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    ox, oy, ow, oh = _match_avatar_roi_offset()
+    x, y, w, h = rect
+    return x + ox, y + oy, w + ow, h + oh
 
 
 def _get_char_id(oper_name: str) -> str:
@@ -59,24 +71,9 @@ def _normalize_name(name: str) -> str:
 def detect_slots(
     context: Context,
     image: np.ndarray,
-    threshold: float = _FLAG_THRESHOLD,
 ) -> list[dict]:
-    """用 TemplateMatch 检测待部署区所有干员槽位。"""
-    reco_detail = context.run_recognition(
-        "DetectSlots",
-        image,
-        pipeline_override={
-            "DetectSlots": {
-                "recognition": "TemplateMatch",
-                "template": "BattleOpersFlag.png",
-                "threshold": threshold,
-                "roi": _FLAG_ROI,
-                "method": 5,
-                "green_mask": True,
-                "order_by": "Horizontal",
-            }
-        },
-    )
+    """用 pipeline 节点 DetectSlots 检测待部署区所有干员槽位。"""
+    reco_detail = context.run_recognition("DetectSlots", image)
 
     if not reco_detail or not reco_detail.hit:
         return []
@@ -86,17 +83,15 @@ def detect_slots(
         box = getattr(result, "box", None)
         if box is None:
             continue
-        fx, fy, fw, fh = box
-        ax = int(fx + _AVATAR_OFFSET[0])
-        ay = int(fy + _AVATAR_OFFSET[1])
-        aw = _AVATAR_OFFSET[2]
-        ah = _AVATAR_OFFSET[3]
+        fx, fy, fw, fh = (int(v) for v in box)
+        flag_rect = (fx, fy, fw, fh)
+        avatar_rect = _apply_roi_offset(flag_rect)
         click_x = int(fx - 45 + 75 // 2)
         click_y = int(fy + 6 + 120 // 2)
         slots.append(
             {
-                "flag_rect": (int(fx), int(fy), int(fw), int(fh)),
-                "avatar_rect": (ax, ay, aw, ah),
+                "flag_rect": flag_rect,
+                "avatar_rect": avatar_rect,
                 "click_pos": (click_x, click_y),
             }
         )
@@ -137,18 +132,16 @@ def locate_oper(
     if char_id and (_avatar_dir() / f"{char_id}.png").exists():
         for i, slot in enumerate(slots):
             ax, ay, aw, ah = slot["avatar_rect"]
-            roi = [max(0, ax - 5), max(0, ay - 5), aw + 10, ah + 10]
+            # MatchAvatar 的 roi_offset 写在 pipeline/reco.json 中；这里动态传 flag_rect。
+            roi = list(slot["flag_rect"])
 
             reco = context.run_recognition(
-                f"MatchAvatar_{char_id}_{i}",
+                "MatchAvatar",
                 image,
                 pipeline_override={
-                    f"MatchAvatar_{char_id}_{i}": {
-                        "recognition": "TemplateMatch",
+                    "MatchAvatar": {
                         "template": f"avatar/{char_id}.png",
-                        "threshold": 0.7,
                         "roi": roi,
-                        "method": 5,
                     }
                 },
             )
@@ -196,18 +189,7 @@ def locate_oper(
 
 def _ocr_oper_name(context: Context, detail_img: np.ndarray) -> str | None:
     """OCR 读取详情页干员名。"""
-    reco = context.run_recognition(
-        "OcrOperName",
-        detail_img,
-        pipeline_override={
-            "OcrOperName": {
-                "recognition": "OCR",
-                "roi": _NAME_ROI,
-                "threshold": 0.3,
-                "order_by": "Area",
-            }
-        },
-    )
+    reco = context.run_recognition("OcrOperName", detail_img)
 
     if not reco or not reco.hit:
         return None

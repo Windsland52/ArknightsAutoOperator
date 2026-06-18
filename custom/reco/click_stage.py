@@ -126,7 +126,6 @@ class ClickStageRecognition(CustomRecognition):
             argv.image,
             pipeline_override={
                 "ClickStageMatch": {
-                    "recognition": "OCR",
                     "expected": [stage_text],
                 }
             },
