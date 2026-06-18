@@ -411,11 +411,17 @@ def _ensure_admin() -> None:
     except (AttributeError, OSError):
         return
 
-    # 重新以管理员身份启动自己，只带原参数（不含 argv[0]=自身路径，避免重复）
-    args = sys.argv[1:]
+    frozen = getattr(sys, "frozen", False)
+    if frozen:
+        # 打包 exe：重启自身，只带原参数（不含 argv[0]=自身路径，避免重复）
+        args = sys.argv[1:]
+        work_dir = os.path.dirname(os.path.abspath(sys.executable))
+    else:
+        # 开发模式：`uv run python -m aao.app` 时 sys.argv 不包含 `-m aao.app`，
+        # 提权后必须显式补上模块入口，否则只会打开 python 交互 REPL。
+        args = ["-m", "aao.app", *sys.argv[1:]]
+        work_dir = os.getcwd()
     params = " ".join(f'"{a}"' for a in args)
-    # 工作目录用 exe 所在目录（否则 UAC 提权后默认 system32，资源找不到）
-    work_dir = os.path.dirname(os.path.abspath(sys.executable))
     try:
         rc = ctypes.windll.shell32.ShellExecuteW(  # pyright: ignore[reportAttributeAccessIssue]
             None, "runas", sys.executable, params, work_dir, 1
