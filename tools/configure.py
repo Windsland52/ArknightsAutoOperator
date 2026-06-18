@@ -20,9 +20,7 @@ def configure_ocr_model():
     shutil.copy2(_OCR_SRC / "tiny" / "keys.txt", _OCR_DST / "keys.txt")
 
     (_OCR_DST / "README.md").write_text(
-        "PP-OCRv6 mixed model:\n"
-        "- det.onnx: ppocr_v6/small\n"
-        "- rec.onnx, keys.txt: ppocr_v6/tiny\n",
+        "PP-OCRv6 mixed model:\n- det.onnx: ppocr_v6/small\n- rec.onnx, keys.txt: ppocr_v6/tiny\n",
         encoding="utf-8",
     )
 
