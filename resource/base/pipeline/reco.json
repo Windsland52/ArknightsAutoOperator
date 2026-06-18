@@ -17,10 +17,10 @@
         "desc": "在指定槽位 ROI 内匹配头像缓存；roi 使用槽位 flag_rect，roi_offset 移到头像区域",
         "recognition": "TemplateMatch",
         "roi_offset": [
-            -35,
-            39,
-            45,
-            46
+            -39,
+            35,
+            53,
+            54
         ],
         "roi_code": "由 avatar.py 动态覆盖（槽位 flag_rect）",
         "template_code": "avatar/{char_id}.png 由 avatar.py 动态覆盖"
