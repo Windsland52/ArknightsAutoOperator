@@ -51,6 +51,7 @@ from aao.measure.api_server import ApiServer  # noqa: E402
 from aao.measure.overlay import OverlayWindow  # noqa: E402
 from aao.measure.worker import MeasurementWorker  # noqa: E402
 from aao.timeline.editor_window import EditorWindow  # noqa: E402
+from aao.ui.about_page import AboutPage  # noqa: E402
 from aao.ui.calibration_page import CalibrationPage  # noqa: E402
 from aao.ui.farm_page import FarmPage  # noqa: E402
 from aao.ui.log_handler import QtLogHandler  # noqa: E402
@@ -268,7 +269,7 @@ class MainWindow(QMainWindow):
         # 左侧侧栏
         self.nav = QListWidget()
         self.nav.setFixedWidth(120)
-        for label in ["🎯 凹图", "✏️ 打轴", "📏 校准", "⚙️ 设置"]:
+        for label in ["🎯 凹图", "✏️ 打轴", "📏 校准", "⚙️ 设置", "ℹ️ 关于"]:
             QListWidgetItem(label, self.nav)
         self.nav.setCurrentRow(0)
         root.addWidget(self.nav)
@@ -284,6 +285,7 @@ class MainWindow(QMainWindow):
         self._editor = self.editor_page  # 供热键 mark_action
         self.calib_page = CalibrationPage()
         self.settings_page = SettingsPage()
+        self.about_page = AboutPage()
         # 注入 controller（校准页需要截图；凹图页需 controller+tasker，已在上面注入）
         if self._controller is not None:
             self.calib_page.set_runtime(self._controller)
@@ -292,6 +294,7 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.editor_page)
         self.stack.addWidget(self.calib_page)
         self.stack.addWidget(self.settings_page)
+        self.stack.addWidget(self.about_page)
         root.addWidget(self.stack, 1)
 
         self.setCentralWidget(central)

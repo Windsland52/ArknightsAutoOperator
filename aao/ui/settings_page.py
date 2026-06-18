@@ -200,12 +200,6 @@ class SettingsPage(QWidget):
         rl.addLayout(btn_row)
         root.addWidget(res_box)
 
-        # --- 关于 ---
-        about_box = QGroupBox("关于")
-        al = QVBoxLayout(about_box)
-        al.addWidget(QLabel(f"ArknightsAutoOperator  v{__version__}"))
-        al.addWidget(QLabel("MaaFramework 方案二 + PySide6 · 帧级自动凹图"))
-        root.addWidget(about_box)
         root.addStretch()
 
         # 日志
