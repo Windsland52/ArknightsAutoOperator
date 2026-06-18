@@ -88,12 +88,14 @@ class Timeline:
     coordinate: str = "frame"  # "frame" | "time"
     actions: list[TimelineAction] = field(default_factory=list)
     name: str = ""  # 用户可读名称
+    candidates: list[str] = field(default_factory=list)  # 候选干员/装置名
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "map_code": self.map_code,
             "coordinate": self.coordinate,
             "name": self.name,
+            "candidates": self.candidates,
             "actions": [a.to_dict() for a in self.actions],
         }
 
@@ -103,6 +105,7 @@ class Timeline:
             map_code=d.get("map_code", ""),
             coordinate=d.get("coordinate", "frame"),
             name=d.get("name", ""),
+            candidates=d.get("candidates", []),
             actions=[TimelineAction.from_dict(a) for a in d.get("actions", [])],
         )
 

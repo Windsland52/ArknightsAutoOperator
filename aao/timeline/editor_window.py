@@ -21,12 +21,15 @@ from PySide6.QtWidgets import (
     QCompleter,
     QFileDialog,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QListWidget,
     QPushButton,
     QRadioButton,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -55,6 +58,7 @@ class EditorWindow(QWidget):
         self.timeline = Timeline()
         self._current_frame = 0  # 实时帧（由外部更新）
         self._align_mode = False  # False=打轴（游标不跟随），True=对轴（游标跟实时帧）
+        self._candidates: list[str] = []  # 候选干员/装置列表
 
         self.canvas = TimelineCanvas()
         self.canvas.node_clicked.connect(self._on_canvas_node_clicked)
@@ -111,7 +115,7 @@ class EditorWindow(QWidget):
         self.canvas.set_timeline(self.timeline)
         layout.addWidget(self.canvas)
 
-        # --- 中部：动作列表 + 编辑面板 ---
+        # --- 中部：动作列表 + 右侧面板（候选区 + 编辑面板）---
         middle = QHBoxLayout()
 
         # 动作列表
@@ -123,9 +127,34 @@ class EditorWindow(QWidget):
         self.table.setMinimumWidth(400)
         middle.addWidget(self.table, 3)
 
-        # 编辑面板
+        # 右侧竖分两半：上=候选干员/装置，下=动作编辑面板
+        right_splitter = QSplitter(Qt.Orientation.Vertical)
+
+        # --- 候选区 ---
+        cand_box = QGroupBox("候选干员/装置")
+        cl = QVBoxLayout(cand_box)
+        add_row = QHBoxLayout()
+        self.edit_cand = QLineEdit()
+        self.edit_cand.setPlaceholderText("输入名称后回车添加")
+        cand_completer = QCompleter()
+        cand_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.edit_cand.setCompleter(cand_completer)
+        self._cand_completer = cand_completer
+        self._load_operator_names(cand_completer)
+        self.btn_cand_add = QPushButton("➕")
+        self.btn_cand_add.setMaximumWidth(40)
+        self.btn_cand_del = QPushButton("➖")
+        self.btn_cand_del.setMaximumWidth(40)
+        add_row.addWidget(self.edit_cand)
+        add_row.addWidget(self.btn_cand_add)
+        add_row.addWidget(self.btn_cand_del)
+        cl.addLayout(add_row)
+        self.list_candidates = QListWidget()
+        cl.addWidget(self.list_candidates)
+        right_splitter.addWidget(cand_box)
+
+        # --- 编辑面板 ---
         panel = QWidget()
-        panel.setMaximumWidth(250)
         p_layout = QGridLayout(panel)
         p_layout.setContentsMargins(8, 8, 8, 8)
 
@@ -140,7 +169,6 @@ class EditorWindow(QWidget):
         oper_completer = QCompleter()
         oper_completer.setFilterMode(Qt.MatchFlag.MatchContains)
         self.cb_oper.setCompleter(oper_completer)
-        self._load_operators()
         p_layout.addWidget(self.cb_oper, 1, 1)
 
         p_layout.addWidget(QLabel("位置:"), 2, 0)
@@ -168,8 +196,12 @@ class EditorWindow(QWidget):
         btn_w = QWidget()
         btn_w.setLayout(btn_row)
         p_layout.addWidget(btn_w, 4, 0, 1, 2)
+        right_splitter.addWidget(panel)
 
-        middle.addWidget(panel, 1)
+        right_splitter.setStretchFactor(0, 1)
+        right_splitter.setStretchFactor(1, 1)
+        right_splitter.setMaximumWidth(280)
+        middle.addWidget(right_splitter, 1)
         layout.addLayout(middle, 1)
 
         # --- 底部状态 ---
@@ -183,11 +215,74 @@ class EditorWindow(QWidget):
         self.btn_delete.clicked.connect(self._on_delete)
         self.btn_pick.clicked.connect(self._on_pick_pos)
         self.table.currentItemChanged.connect(self._on_select)
+        self.btn_cand_add.clicked.connect(self._add_candidate)
+        self.btn_cand_del.clicked.connect(self._del_candidate)
+        self.edit_cand.returnPressed.connect(self._add_candidate)
+        self.list_candidates.currentRowChanged.connect(self._on_candidate_selected)
+
+    # --- 候选干员/装置管理 ---
+
+    def _add_candidate(self) -> None:
+        """添加候选（输入框回车或按钮）。"""
+        name = self.edit_cand.text().strip()
+        if not name:
+            return
+        if name in self._candidates:
+            self.lbl_status.setText(f"{name} 已在候选列表")
+            return
+        self._candidates.append(name)
+        self.list_candidates.addItem(name)
+        self.cb_oper.addItem(name)
+        self.edit_cand.clear()
+        self.lbl_status.setText(f"已添加候选: {name}")
+
+    def _del_candidate(self) -> None:
+        """删除选中的候选。"""
+        row = self.list_candidates.currentRow()
+        if row < 0:
+            return
+        name = self._candidates.pop(row)
+        self.list_candidates.takeItem(row)
+        idx = self.cb_oper.findText(name)
+        if idx >= 0:
+            self.cb_oper.removeItem(idx)
+        self.lbl_status.setText(f"已移除候选: {name}")
+
+    def _on_candidate_selected(self, row: int) -> None:
+        """选中候选 → 同步到编辑面板干员框。"""
+        if 0 <= row < len(self._candidates):
+            self.cb_oper.setCurrentText(self._candidates[row])
+
+    def _sync_candidates_from_timeline(self) -> None:
+        """从 timeline 数据加载候选列表。"""
+        cands = getattr(self.timeline, "candidates", None) or []
+        self._candidates.clear()
+        self.list_candidates.clear()
+        self.cb_oper.clear()
+        for name in cands:
+            self._candidates.append(name)
+            self.list_candidates.addItem(name)
+            self.cb_oper.addItem(name)
+
+    def _collect_candidates(self) -> None:
+        """保存前把候选写回 timeline。"""
+        # 从已有动作中收集用到的干员名，补进候选
+        existing = {a.oper for a in self.timeline.actions if a.oper}
+        for name in self._candidates:
+            existing.discard(name)
+        for name in sorted(existing):
+            if name and name not in self._candidates:
+                self._candidates.append(name)
+                self.list_candidates.addItem(name)
+                self.cb_oper.addItem(name)
+        self.timeline.candidates = list(self._candidates)
 
     # --- 数据加载 ---
 
-    def _load_operators(self) -> None:
-        """从 data/operator_names.json 加载干员名列表。"""
+    def _load_operator_names(self, completer: QCompleter) -> None:
+        """从 data/operator_names.json 加载干员名到 completer。"""
+        from PySide6.QtCore import QStringListModel
+
         from aao.utils.runtime_paths import project_root
 
         path = project_root() / "data" / "operator_names.json"
@@ -195,7 +290,7 @@ class EditorWindow(QWidget):
             return
         raw = json.loads(path.read_text(encoding="utf-8"))
         names = [item["name"] for item in raw if item.get("name")]
-        self.cb_oper.addItems(names)
+        completer.setModel(QStringListModel(names))
 
     def _load_level_codes(self) -> None:
         """从 data/level_codes.json 加载关卡代号。"""
@@ -233,10 +328,16 @@ class EditorWindow(QWidget):
     # --- 热键标记 ---
 
     def mark_action(self, action_type: ActionType) -> None:
-        """热键触发：在当前帧标记一个动作。"""
+        """热键触发：在当前帧标记一个动作，自动带当前选中的候选干员。"""
+        # 选中候选 → 自动填干员名
+        oper = ""
+        row = self.list_candidates.currentRow()
+        if 0 <= row < len(self._candidates):
+            oper = self._candidates[row]
         action = TimelineAction(
             frame=self._current_frame,
             action_type=action_type,
+            oper=oper or "",
         )
         self.timeline.actions.append(action)
         self.timeline.sorted()
@@ -325,6 +426,7 @@ class EditorWindow(QWidget):
             return
         self.timeline = load_timeline(path)
         self.edit_map.setText(self.timeline.map_code)
+        self._sync_candidates_from_timeline()
         self._refresh_table()
         self.lbl_status.setText(f"已加载 {len(self.timeline.actions)} 个动作")
 
@@ -333,5 +435,6 @@ class EditorWindow(QWidget):
         if not path:
             return
         self.timeline.map_code = self.edit_map.text().strip()
+        self._collect_candidates()
         save_timeline(self.timeline, path)
         self.lbl_status.setText(f"已保存到 {path}")
