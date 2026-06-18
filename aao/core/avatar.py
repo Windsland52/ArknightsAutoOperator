@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 from aao.utils.logger import logger
 
 # MAA 常量（1280×720）
-_DETAIL_WAIT = 0.5  # 等详情页打开
+_DETAIL_WAIT = 1  # 等详情页打开
 
 
 def _avatar_dir() -> Path:
