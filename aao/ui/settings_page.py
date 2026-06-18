@@ -162,6 +162,10 @@ class SettingsPage(QWidget):
         self.chk_api.setChecked(True)
         form.addRow(self.chk_api)
 
+        self.edit_proxy = QLineEdit()
+        self.edit_proxy.setPlaceholderText("可选，如 http://127.0.0.1:7890（资源同步/更新使用）")
+        form.addRow("下载代理:", self.edit_proxy)
+
         self.btn_save = QPushButton("💾 保存设置")
         form.addRow(self.btn_save)
         root.addWidget(run_box)
@@ -349,6 +353,8 @@ class SettingsPage(QWidget):
         if s.get("port"):
             self.edit_port.setText(str(s["port"]))
         self.chk_api.setChecked(s.get("api", True))
+        if s.get("proxy"):
+            self.edit_proxy.setText(str(s["proxy"]))
 
     def _on_save(self) -> None:
         try:
@@ -356,13 +362,17 @@ class SettingsPage(QWidget):
         except ValueError:
             QMessageBox.warning(self, "端口无效", "WebSocket 端口必须是整数")
             return
-        data = {
-            "profile": self.cb_profile.currentText(),
-            "port": port,
-            "api": self.chk_api.isChecked(),
-        }
+        data = load_settings()
+        data.update(
+            {
+                "profile": self.cb_profile.currentText(),
+                "port": port,
+                "api": self.chk_api.isChecked(),
+                "proxy": self.edit_proxy.text().strip(),
+            }
+        )
         save_settings(data)
-        self.lbl_op.setText("设置已保存（端口/profile 变更需重启生效）")
+        self.lbl_op.setText("设置已保存（端口/profile/代理变更需重启或下次同步生效）")
         self.settings_changed.emit()
 
     def _run_resource(self, mode: str, force_remote: bool) -> None:
