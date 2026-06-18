@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD033 MD041 -->
 <div align="center">
 
-<img src="./logo.png" alt="ArknightsAutoOperator" width="160" />
+<img src="./logo.png" alt="ArknightsAutoOperator" width="256" />
 
 # ArknightsAutoOperator
 
@@ -10,6 +10,7 @@
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows-blue" />
   <img alt="MaaFramework" src="https://img.shields.io/badge/MaaFramework-powered-7C3AED" />
   <img alt="PySide6" src="https://img.shields.io/badge/UI-PySide6-41CD52?logo=qt&logoColor=white" />
+  <br>
   <a href="https://github.com/Windsland52/ArknightsAutoOperator/actions/workflows/package-check.yml"><img alt="Package Check" src="https://github.com/Windsland52/ArknightsAutoOperator/actions/workflows/package-check.yml/badge.svg" /></a>
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/Windsland52/ArknightsAutoOperator" /></a>
   <a href="https://github.com/Windsland52/ArknightsAutoOperator/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/Windsland52/ArknightsAutoOperator?style=social" /></a>
