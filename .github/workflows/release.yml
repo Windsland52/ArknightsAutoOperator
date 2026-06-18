@@ -73,6 +73,9 @@ jobs:
               shell: bash
               run: |
                   cp -r resource data examples dist/aao.app/
+                  cp logo.png dist/aao.app/
+                  # 清理冒烟测试生成的运行时目录（不该进发版包）
+                  rm -rf dist/aao.app/config dist/aao.app/debug
             - name: Package
               shell: bash
               run: |

@@ -85,6 +85,8 @@ jobs:
               shell: bash
               run: |
                   cp -r resource data examples dist/aao.app/
+                  cp logo.png dist/aao.app/
+                  rm -rf dist/aao.app/config dist/aao.app/debug
             - name: Package
               shell: bash
               run: |
