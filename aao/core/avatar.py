@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import time
-import unicodedata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -49,15 +48,12 @@ def _get_char_id(oper_name: str) -> str:
 
 
 def _normalize_name(name: str) -> str:
-    """归一化干员名用于匹配（OCR 结果可能与原名有字形差异）。
+    """干员名匹配前的最小清理。
 
-    - NFKC：上标 ²→2、Ⅲ→III、全角字母数字→半角。
-    - 去除空白。
+    PP-OCRv6 rec 模型足够强，不再做 NFKC/字形替换/大小写折叠，避免把
+    特殊干员名（如 GALLUS²）改写成与资源名不一致的形式。
     """
-    if not name:
-        return ""
-    name = unicodedata.normalize("NFKC", name)
-    return name.replace(" ", "").replace("　", "")
+    return name.strip() if name else ""
 
 
 def detect_slots(
@@ -208,6 +204,7 @@ def _ocr_oper_name(context: Context, detail_img: np.ndarray) -> str | None:
                 "recognition": "OCR",
                 "roi": _NAME_ROI,
                 "threshold": 0.3,
+                "order_by": "Area",
             }
         },
     )
