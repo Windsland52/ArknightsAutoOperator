@@ -255,8 +255,12 @@ class EditorWindow(QWidget):
             self.cb_oper.setCurrentText(self._candidates[row])
 
     def _sync_candidates_from_timeline(self) -> None:
-        """从 timeline 数据加载候选列表。"""
-        cands = getattr(self.timeline, "candidates", None) or []
+        """从 timeline 数据加载候选列表（candidates 字段 + 已有动作里的干员名）。"""
+        cands = list(getattr(self.timeline, "candidates", None) or [])
+        # 补充动作里用到但不在 candidates 里的干员/装置
+        for a in self.timeline.actions:
+            if a.oper and a.oper not in cands:
+                cands.append(a.oper)
         self._candidates.clear()
         self.list_candidates.clear()
         self.cb_oper.clear()
