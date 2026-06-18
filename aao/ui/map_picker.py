@@ -99,10 +99,7 @@ class _MapGrid(QGraphicsView):
         super().mousePressEvent(event)
 
     def _select(self, c: int, r: int) -> None:
-        # 只允许选可部署格
-        tile = self._tiles[r][c]
-        if tile.get("buildableType", 0) == 0:
-            return
+        # 允许选任意格子（含不可部署区，装置/技能目标可能在不可部署格上）
         # 清旧高亮
         if self._selected is not None:
             old = self._cell_items.get(self._selected)
