@@ -9,10 +9,11 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QSlider,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -131,6 +133,7 @@ class SettingsPage(QWidget):
 
     settings_changed = Signal()  # 保存后通知 MainWindow（端口/profile 变更需重启生效）
     window_configured = Signal()  # 设为默认窗口后（新手引导用：连完窗口 → 校准）
+    background_changed = Signal(str, float)  # 背景图路径 + 透明度(0-1)，即时应用
 
     def __init__(self):
         super().__init__()
@@ -280,6 +283,28 @@ class SettingsPage(QWidget):
 
         root.addWidget(ui_box)
 
+        # --- 背景图 ---
+        bg_box = QGroupBox("背景图")
+        bg_form = QFormLayout(bg_box)
+        self.edit_bg = QLineEdit()
+        self.edit_bg.setPlaceholderText("可选，留空 = 无背景图")
+        self.btn_bg_pick = QPushButton("📂 选择")
+        self.btn_bg_clear = QPushButton("✕ 清除")
+        bg_file_row = QHBoxLayout()
+        bg_file_row.addWidget(self.edit_bg, 1)
+        bg_file_row.addWidget(self.btn_bg_pick)
+        bg_file_row.addWidget(self.btn_bg_clear)
+        bg_form.addRow("图片:", bg_file_row)
+        self.slider_bg = QSlider(Qt.Orientation.Horizontal)
+        self.slider_bg.setRange(0, 100)
+        self.slider_bg.setValue(25)
+        self.lbl_bg_val = QLabel("25%")
+        bg_op_row = QHBoxLayout()
+        bg_op_row.addWidget(self.slider_bg, 1)
+        bg_op_row.addWidget(self.lbl_bg_val)
+        bg_form.addRow("透明度:", bg_op_row)
+        root.addWidget(bg_box)
+
         root.addStretch()
 
         # 日志
@@ -289,6 +314,9 @@ class SettingsPage(QWidget):
         # 信号
         self.btn_save.clicked.connect(self._on_save)
         self.cb_theme.currentIndexChanged.connect(self._on_theme_changed)
+        self.btn_bg_pick.clicked.connect(self._on_bg_pick)
+        self.btn_bg_clear.clicked.connect(self._on_bg_clear)
+        self.slider_bg.valueChanged.connect(self._on_bg_opacity)
         self.btn_sync.clicked.connect(lambda: self._run_resource("sync", False))
         self.btn_sync_remote.clicked.connect(lambda: self._run_resource("sync", True))
         self.btn_check.clicked.connect(lambda: self._run_resource("check_update", False))
@@ -439,10 +467,41 @@ class SettingsPage(QWidget):
         """主题下拉切换：即时应用 + 持久化（纯 UI 偏好，无需重启或点保存按钮）。"""
         mode = theme.MODES[idx]
         theme.apply_theme(mode)
+        # 背景层是自绘的：主题切换后在下一轮事件循环刷新一次，等 Qt 完成 palette 传播。
+        QTimer.singleShot(0, lambda: self._emit_background(save=False))
         s = load_settings()
         s["theme"] = mode
         save_settings(s)
         self.lbl_op.setText(f"主题已切换为：{theme.label(mode)}")
+
+    def _on_bg_pick(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择背景图", "", "图片 (*.png *.jpg *.jpeg *.bmp *.webp)"
+        )
+        if not path:
+            return
+        self.edit_bg.setText(path)
+        self._emit_background()
+
+    def _on_bg_clear(self) -> None:
+        self.edit_bg.clear()
+        self._emit_background()
+
+    def _on_bg_opacity(self, value: int) -> None:
+        self.lbl_bg_val.setText(f"{value}%")
+        self._emit_background()
+
+    def _emit_background(self, save: bool = True) -> None:
+        """即时应用背景（发信号给 MainWindow）；默认同时持久化。"""
+        path = self.edit_bg.text().strip()
+        opacity = self.slider_bg.value() / 100.0
+        self.background_changed.emit(path, opacity)
+        if not save:
+            return
+        s = load_settings()
+        s["background_image"] = path
+        s["background_opacity"] = self.slider_bg.value()
+        save_settings(s)
 
     def _load(self) -> None:
         s = load_settings()
@@ -451,6 +510,12 @@ class SettingsPage(QWidget):
         mode = s.get("theme", theme.AUTO)
         self.cb_theme.setCurrentIndex(theme.MODES.index(mode) if mode in theme.MODES else 0)
         self.cb_theme.blockSignals(False)
+        # 背景图：同步控件（启动时由 app.py 应用，这里静默，切换时才 emit）
+        self.edit_bg.setText(s.get("background_image", ""))
+        self.slider_bg.blockSignals(True)
+        self.slider_bg.setValue(int(s.get("background_opacity", 25)))
+        self.slider_bg.blockSignals(False)
+        self.lbl_bg_val.setText(f"{self.slider_bg.value()}%")
         if s.get("profile"):
             self.cb_profile.setCurrentText(s["profile"])
         if s.get("port"):

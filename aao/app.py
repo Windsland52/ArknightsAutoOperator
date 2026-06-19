@@ -31,7 +31,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from PySide6.QtCore import QThread, QTimer  # noqa: E402
+from PySide6.QtCore import Qt, QThread, QTimer  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QHBoxLayout,
@@ -41,7 +41,6 @@ from PySide6.QtWidgets import (  # noqa: E402
     QMainWindow,
     QMessageBox,
     QStackedWidget,
-    QWidget,
 )
 
 from aao import config  # noqa: E402
@@ -52,6 +51,7 @@ from aao.measure.overlay import OverlayWindow  # noqa: E402
 from aao.measure.worker import MeasurementWorker  # noqa: E402
 from aao.timeline.editor_window import EditorWindow  # noqa: E402
 from aao.ui.about_page import AboutPage  # noqa: E402
+from aao.ui.background import BackgroundContainer  # noqa: E402
 from aao.ui.calibration_page import CalibrationPage  # noqa: E402
 from aao.ui.farm_page import FarmPage  # noqa: E402
 from aao.ui.log_handler import QtLogHandler  # noqa: E402
@@ -159,6 +159,14 @@ class MainWindow(QMainWindow):
         self.tray.show_requested.connect(self._restore_from_tray)
         self.tray.quit_requested.connect(self._quit_from_tray)
         self.tray.show()
+
+        # 背景图（读 settings 启动即应用；后续切换由设置页 background_changed 驱动）
+        from aao.ui.settings_page import load_settings
+
+        bg = load_settings()
+        self._apply_background(
+            bg.get("background_image", ""), bg.get("background_opacity", 25) / 100.0
+        )
 
     # --- 新手引导 ---
 
@@ -289,7 +297,8 @@ class MainWindow(QMainWindow):
         self.nav.setCurrentRow(_PAGE_FARM)
 
     def _build_ui(self) -> None:
-        central = QWidget()
+        central = BackgroundContainer()  # 带 cover 背景图的 central（paintEvent 画图）
+        self.bg_container = central
         root = QHBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
@@ -329,6 +338,23 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
 
+        # 背景图从侧栏/内容栈/各页根透出。用 objectName 限定透明：只让这些容器本身透明，
+        # 不级联到表格表头/下拉项等子控件——否则 "background: transparent" 会破坏子控件
+        # 渲染（表头变黑、下拉项 focus 时字变白看不清）。控件本身保持 palette 不透明。
+        self.setStyleSheet("#bg_layer { background: transparent; }")
+        for w in (
+            self.nav,
+            self.stack,
+            self.farm_page,
+            self.editor_page,
+            self.calib_page,
+            self.settings_page,
+            self.about_page,
+        ):
+            w.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            w.setObjectName("bg_layer")
+        self.settings_page.background_changed.connect(self._apply_background)
+
         # 新手引导：设置页连好窗口 → 引导中则跳校准页；校准页保存 → 跳凹图页 + 标记完成
         # 普通 settings_changed（改端口/profile）不触发引导
         self.settings_page.window_configured.connect(self._on_window_configured)
@@ -354,6 +380,11 @@ class MainWindow(QMainWindow):
         """设置状态栏连接状态，圆点按状态着色。"""
         self.status_conn.setText(f"● {text}")
         self.status_conn.setStyleSheet(f"color: {color}; font-weight: bold;")
+
+    def _apply_background(self, path: str, opacity: float) -> None:
+        """应用背景图 + 透明度到 central（设置页 background_changed / 启动时调用）。"""
+        self.bg_container.set_background(path)
+        self.bg_container.set_opacity(opacity)
 
     # --- 测量状态更新 ---
 

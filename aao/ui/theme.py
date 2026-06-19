@@ -99,11 +99,29 @@ def light_palette() -> QPalette:
     return p
 
 
-def _apply_palette_for_scheme(scheme: Qt.ColorScheme) -> None:
+def _refresh_existing_widgets(app: QApplication, palette: QPalette) -> None:
+    """同步刷新已存在控件的 palette，避免主题切换时控件外观落后一拍。
+
+    Qt 会异步向现有 widget 分发 PaletteChange；对下拉框/表格/按钮这类控件，
+    视觉上可能要到下一次交互或下一轮切换才更新。这里主动同步 palette + repolish。
+    """
+    for w in app.allWidgets():
+        w.setPalette(palette)
+        w.style().unpolish(w)
+        w.style().polish(w)
+        w.update()
+
+
+def _apply_palette(palette: QPalette) -> None:
     app = QApplication.instance()
     if not isinstance(app, QApplication):
         return
-    app.setPalette(dark_palette() if scheme == Qt.ColorScheme.Dark else light_palette())
+    app.setPalette(palette)
+    _refresh_existing_widgets(app, palette)
+
+
+def _apply_palette_for_scheme(scheme: Qt.ColorScheme) -> None:
+    _apply_palette(dark_palette() if scheme == Qt.ColorScheme.Dark else light_palette())
 
 
 def _on_system_scheme_changed(scheme: Qt.ColorScheme) -> None:
@@ -137,4 +155,4 @@ def apply_theme(mode: str) -> None:
         _listening = True
         _apply_palette_for_scheme(hints.colorScheme())
     else:
-        app.setPalette(dark_palette() if _current_mode == DARK else light_palette())
+        _apply_palette(dark_palette() if _current_mode == DARK else light_palette())
