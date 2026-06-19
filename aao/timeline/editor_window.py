@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import json
 
-from PySide6.QtCore import QEvent, QObject, Qt, Signal
-from PySide6.QtGui import QFont, QPalette
+from PySide6.QtCore import QEvent, QObject, QRect, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QPainter, QPalette
 from PySide6.QtWidgets import (
     QComboBox,
     QCompleter,
@@ -44,6 +44,29 @@ from aao.ui.scrollbar_style import apply_themed_scrollbar
 from aao.ui.timeline_canvas import TimelineCanvas
 from aao.ui.toggle_switch import ToggleSwitch
 from aao.utils.logger import logger
+
+
+class _TimelineHeader(QHeaderView):
+    """动作表自绘表头：不走平台 header 文本绘制，避免浅色模式被画成白字。"""
+
+    def paintSection(self, painter: QPainter, rect: QRect, logical_index: int) -> None:
+        if not rect.isValid():
+            return
+        is_dark = self.palette().color(QPalette.ColorRole.Window).lightness() < 128
+        bg = QColor(255, 255, 255, 45) if is_dark else QColor(255, 255, 255, 170)
+        fg = QColor("#e6e6e6") if is_dark else QColor("#000000")
+        border = QColor(255, 255, 255, 55) if is_dark else QColor(0, 0, 0, 70)
+        painter.save()
+        painter.fillRect(rect, bg)
+        painter.setPen(border)
+        painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+        data = self.model().headerData(
+            logical_index, self.orientation(), Qt.ItemDataRole.DisplayRole
+        )
+        text = "" if data is None else str(data)
+        painter.setPen(fg)
+        painter.drawText(rect.adjusted(4, 0, -4, 0), Qt.AlignmentFlag.AlignCenter, text)
+        painter.restore()
 
 
 class EditorWindow(QWidget):
@@ -125,9 +148,12 @@ class EditorWindow(QWidget):
 
         # 动作列表
         self.table = QTableWidget(0, 5)
-        self._style_table_scrollbars()
+        self.table.setHorizontalHeader(_TimelineHeader(Qt.Orientation.Horizontal, self.table))
         self.table.viewport().setStyleSheet("background: transparent;")
         self.table.setHorizontalHeaderLabels(["时间", "类型", "干员", "位置", "朝向"])
+        self._style_table_scrollbars()
+        self.table.verticalHeader().hide()  # 行号列冗余（已有时间列），隐藏后更像轻量面板
+        self.table.setShowGrid(False)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -265,8 +291,15 @@ class EditorWindow(QWidget):
         self.lbl_frame.setStyleSheet(f"color: {'#00e5ff' if is_dark else '#00789a'};")
 
     def _style_table_scrollbars(self) -> None:
-        """打轴表格透明时，滚动条轨道/滑块也按主题着色，避免黑色轨道突兀。"""
-        apply_themed_scrollbar(self.table, "QTableWidget { background: transparent; }")
+        """打轴表格透明时，表头/滚动条也按主题着色，避免平台默认凸起样式突兀。"""
+        is_dark = self.palette().color(QPalette.ColorRole.Window).lightness() < 128
+        selection = "rgba(61, 125, 206, 115)" if is_dark else "rgba(61, 125, 206, 75)"
+        self.table.horizontalHeader().update()
+        base = (
+            "QTableWidget { background: transparent; border: none; }"
+            f"QTableWidget::item:selected {{ background: {selection}; }}"
+        )
+        apply_themed_scrollbar(self.table, base)
 
     def _show_shortcut_tip(self) -> None:
         """主动显示快捷键说明：悬停/点击都能看到，不依赖系统 tooltip 延迟。"""
@@ -278,11 +311,15 @@ class EditorWindow(QWidget):
             self._show_shortcut_tip()
         return super().eventFilter(obj, event)
 
+    def _refresh_theme_styles(self) -> None:
+        """主题切换后同步刷新自定义 QSS，避免表头保留上一主题颜色。"""
+        self._style_frame_label()
+        self._style_table_scrollbars()
+
     def changeEvent(self, event: QEvent) -> None:
-        # 主题切换 → palette 变 → 帧数标签换适配色
+        # 主题切换 → palette 变 → 帧数标签/表头换适配色
         if event.type() == QEvent.Type.PaletteChange:
-            self._style_frame_label()
-            self._style_table_scrollbars()
+            self._refresh_theme_styles()
         super().changeEvent(event)
 
     # --- 候选干员/装置管理 ---

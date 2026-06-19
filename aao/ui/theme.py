@@ -112,6 +112,10 @@ def _refresh_existing_widgets(app: QApplication, palette: QPalette) -> None:
         w.style().unpolish(w)
         w.style().polish(w)
         w.update()
+    for w in app.allWidgets():
+        refresh = getattr(w, "_refresh_theme_styles", None)
+        if callable(refresh):
+            refresh()
     refresh_themed_scrollbars(app)
 
 
