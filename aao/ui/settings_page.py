@@ -171,7 +171,7 @@ class SettingsPage(QWidget):
         # 右侧：窗口列表 + 操作按钮 + 状态
         right = QVBoxLayout()
         self.list_windows = QListWidget()
-        apply_themed_scrollbar(self.list_windows)
+        apply_themed_scrollbar(self.list_windows, "QListWidget { background: transparent; }")
         self.list_windows.setMinimumWidth(320)
         self.list_windows.setMaximumHeight(140)
         right.addWidget(self.list_windows)

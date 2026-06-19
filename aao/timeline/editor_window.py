@@ -157,7 +157,7 @@ class EditorWindow(QWidget):
         add_row.addWidget(self.btn_cand_del)
         cl.addLayout(add_row)
         self.list_candidates = QListWidget()
-        apply_themed_scrollbar(self.list_candidates)
+        apply_themed_scrollbar(self.list_candidates, "QListWidget { background: transparent; }")
         cl.addWidget(self.list_candidates)
         right_splitter.addWidget(cand_box)
 
