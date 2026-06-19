@@ -386,23 +386,37 @@ class EditorWindow(QWidget):
     # --- 动作列表操作 ---
 
     def _refresh_table(self):
+        align = Qt.AlignmentFlag.AlignCenter
         self.table.setRowCount(len(self.timeline.actions))
         for i, a in enumerate(self.timeline.actions):
             time_str = f"{a.frame}" if a.frame is not None else f"{a.time}s"
-            self.table.setItem(i, 0, QTableWidgetItem(time_str))
-            self.table.setItem(i, 1, QTableWidgetItem(a.action_type.value))
+            item0 = QTableWidgetItem(time_str)
+            item0.setTextAlignment(align)
+            self.table.setItem(i, 0, item0)
+            item1 = QTableWidgetItem(a.action_type.value)
+            item1.setTextAlignment(align)
+            self.table.setItem(i, 1, item1)
             if a.action_type == ActionType.SPEED:
-                self.table.setItem(i, 2, QTableWidgetItem(f"{a.speed or 1}x"))
-                self.table.setItem(i, 3, QTableWidgetItem("—"))
+                item2 = QTableWidgetItem(f"{a.speed or 1}x")
+                item2.setTextAlignment(align)
+                self.table.setItem(i, 2, item2)
+                item3 = QTableWidgetItem("—")
+                item3.setTextAlignment(align)
+                self.table.setItem(i, 3, item3)
             else:
-                self.table.setItem(i, 2, QTableWidgetItem(a.oper))
-                self.table.setItem(i, 3, QTableWidgetItem(a.pos))
-            # 部署才显示朝向，技能/撤退/变速显示 —
+                item2 = QTableWidgetItem(a.oper)
+                item2.setTextAlignment(align)
+                self.table.setItem(i, 2, item2)
+                item3 = QTableWidgetItem(a.pos)
+                item3.setTextAlignment(align)
+                self.table.setItem(i, 3, item3)
             if a.action_type == ActionType.DEPLOY and a.direction != DirectionType.NONE:
                 dir_text = a.direction.value
             else:
                 dir_text = "—"
-            self.table.setItem(i, 4, QTableWidgetItem(dir_text))
+            item4 = QTableWidgetItem(dir_text)
+            item4.setTextAlignment(align)
+            self.table.setItem(i, 4, item4)
         self.canvas.set_timeline(self.timeline)
 
     # --- canvas 回调 ---
