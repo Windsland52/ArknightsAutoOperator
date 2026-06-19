@@ -546,6 +546,21 @@ def main() -> int:
     setup_logging("DEBUG" if args.debug else "INFO")
     paths = configure_paths()
 
+    # 从 settings.json 覆盖 config 高级参数（步进/调速/等待时间）
+    from aao.ui.settings_page import load_settings
+
+    s = load_settings()
+    if "bullet_threshold" in s:
+        config.BULLET_THRESHOLD = s["bullet_threshold"]
+    if "speed_up_threshold" in s:
+        config.SPEED_UP_THRESHOLD = s["speed_up_threshold"]
+    if "general_wait_ms" in s:
+        config.GENERAL_WAIT_MS = s["general_wait_ms"]
+    if "mouse_wait_ms" in s:
+        config.MOUSE_WAIT_MS = s["mouse_wait_ms"]
+    if "minimum_wait_ms" in s:
+        config.MINIMUM_WAIT_MS = s["minimum_wait_ms"]
+
     from maa.toolkit import Toolkit
 
     Toolkit.init_option(str(paths["debug"]))

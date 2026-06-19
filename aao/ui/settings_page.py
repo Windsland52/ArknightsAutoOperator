@@ -22,11 +22,12 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
-from aao import __version__
+from aao import __version__, config
 from aao.resources.syncer import sync_all
 from aao.resources.updater import UpdateChecker
 from aao.utils.logger import logger
@@ -240,6 +241,39 @@ class SettingsPage(QWidget):
         self.cb_close_action = QComboBox()
         self.cb_close_action.addItems(["每次询问", "最小化到托盘", "退出程序"])
         ui_form.addRow("关闭窗口时:", self.cb_close_action)
+
+        # 高级参数（帧级执行/等待时间）
+        self.spin_bullet = QSpinBox()
+        self.spin_bullet.setRange(0, 30)
+        self.spin_bullet.setValue(config.BULLET_THRESHOLD)
+        ui_form.addRow("步进阈值（帧）:", self.spin_bullet)
+
+        self.spin_speedup = QSpinBox()
+        self.spin_speedup.setRange(10, 600)
+        self.spin_speedup.setValue(config.SPEED_UP_THRESHOLD)
+        ui_form.addRow("加速阈值（帧）:", self.spin_speedup)
+
+        self.spin_general_wait = QSpinBox()
+        self.spin_general_wait.setRange(10, 2000)
+        self.spin_general_wait.setSingleStep(10)
+        self.spin_general_wait.setSuffix(" ms")
+        self.spin_general_wait.setValue(config.GENERAL_WAIT_MS)
+        ui_form.addRow("通用等待:", self.spin_general_wait)
+
+        self.spin_mouse_wait = QSpinBox()
+        self.spin_mouse_wait.setRange(10, 1000)
+        self.spin_mouse_wait.setSingleStep(10)
+        self.spin_mouse_wait.setSuffix(" ms")
+        self.spin_mouse_wait.setValue(config.MOUSE_WAIT_MS)
+        ui_form.addRow("鼠标等待:", self.spin_mouse_wait)
+
+        self.spin_min_wait = QSpinBox()
+        self.spin_min_wait.setRange(1, 500)
+        self.spin_min_wait.setSingleStep(5)
+        self.spin_min_wait.setSuffix(" ms")
+        self.spin_min_wait.setValue(config.MINIMUM_WAIT_MS)
+        ui_form.addRow("最小等待:", self.spin_min_wait)
+
         root.addWidget(ui_box)
 
         root.addStretch()
@@ -406,6 +440,12 @@ class SettingsPage(QWidget):
         self.chk_api.setChecked(s.get("api", True))
         close_map = {"": 0, "minimize": 1, "exit": 2}
         self.cb_close_action.setCurrentIndex(close_map.get(s.get("close_action", ""), 0))
+        # 高级参数：读 settings，没存过用 config 默认值
+        self.spin_bullet.setValue(s.get("bullet_threshold", config.BULLET_THRESHOLD))
+        self.spin_speedup.setValue(s.get("speed_up_threshold", config.SPEED_UP_THRESHOLD))
+        self.spin_general_wait.setValue(s.get("general_wait_ms", config.GENERAL_WAIT_MS))
+        self.spin_mouse_wait.setValue(s.get("mouse_wait_ms", config.MOUSE_WAIT_MS))
+        self.spin_min_wait.setValue(s.get("minimum_wait_ms", config.MINIMUM_WAIT_MS))
         if s.get("proxy"):
             self.edit_proxy.setText(str(s["proxy"]))
         if s.get("github_token_enc"):
@@ -431,8 +471,19 @@ class SettingsPage(QWidget):
                 "api": self.chk_api.isChecked(),
                 "proxy": self.edit_proxy.text().strip(),
                 "close_action": ["", "minimize", "exit"][self.cb_close_action.currentIndex()],
+                "bullet_threshold": self.spin_bullet.value(),
+                "speed_up_threshold": self.spin_speedup.value(),
+                "general_wait_ms": self.spin_general_wait.value(),
+                "mouse_wait_ms": self.spin_mouse_wait.value(),
+                "minimum_wait_ms": self.spin_min_wait.value(),
             }
         )
+        # 即时覆盖 config（下次凹图立即生效）
+        config.BULLET_THRESHOLD = self.spin_bullet.value()
+        config.SPEED_UP_THRESHOLD = self.spin_speedup.value()
+        config.GENERAL_WAIT_MS = self.spin_general_wait.value()
+        config.MOUSE_WAIT_MS = self.spin_mouse_wait.value()
+        config.MINIMUM_WAIT_MS = self.spin_min_wait.value()
         token = self.edit_github_token.text().strip()
         if token:
             try:
