@@ -16,7 +16,6 @@ import json
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QComboBox,
     QCompleter,
     QFileDialog,
@@ -28,7 +27,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QPushButton,
-    QRadioButton,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -41,6 +39,7 @@ from aao.timeline.io import load_timeline, save_timeline
 from aao.timeline.model import Timeline, TimelineAction
 from aao.ui.map_picker import MapPickerDialog
 from aao.ui.timeline_canvas import TimelineCanvas
+from aao.ui.toggle_switch import ToggleSwitch
 from aao.utils.logger import logger
 
 
@@ -83,21 +82,11 @@ class EditorWindow(QWidget):
         self.edit_map.setCompleter(self._map_completer)
         self._load_level_codes()
 
-        self.rb_author = QRadioButton("打轴")
-        self.rb_align = QRadioButton("对轴")
-        self.rb_author.setChecked(True)
-        mode_group = QButtonGroup(self)
-        mode_group.addButton(self.rb_author)
-        mode_group.addButton(self.rb_align)
-        self.rb_align.toggled.connect(self._on_mode_changed)
+        self.toggle_mode = ToggleSwitch("打轴", "对轴")
+        self.toggle_mode.toggled.connect(self._on_mode_toggle)
 
-        self.rb_speed_auto = QRadioButton("自动变速")
-        self.rb_speed_manual = QRadioButton("手动变速")
-        self.rb_speed_auto.setChecked(True)
-        speed_group = QButtonGroup(self)
-        speed_group.addButton(self.rb_speed_auto)
-        speed_group.addButton(self.rb_speed_manual)
-        self.rb_speed_manual.toggled.connect(self._on_speed_mode_changed)
+        self.toggle_speed = ToggleSwitch("自动变速", "手动变速")
+        self.toggle_speed.toggled.connect(self._on_speed_toggle)
 
         self.lbl_frame = QLabel("--")
         f = QFont("Consolas", 14)
@@ -112,11 +101,9 @@ class EditorWindow(QWidget):
         top.addWidget(self.lbl_map)
         top.addWidget(self.edit_map)
         top.addSpacing(20)
-        top.addWidget(self.rb_author)
-        top.addWidget(self.rb_align)
+        top.addWidget(self.toggle_mode)
         top.addSpacing(20)
-        top.addWidget(self.rb_speed_auto)
-        top.addWidget(self.rb_speed_manual)
+        top.addWidget(self.toggle_speed)
         top.addStretch()
         top.addWidget(self.lbl_frame)
         top.addSpacing(20)
@@ -355,12 +342,15 @@ class EditorWindow(QWidget):
         if self._align_mode:
             self.canvas.set_current_frame(frame)
 
-    def _on_mode_changed(self, checked: bool) -> None:
-        """rb_align 切换：对轴=游标跟随，打轴=游标固定。"""
-        self._align_mode = checked
+    def _on_mode_toggle(self, is_left: bool) -> None:
+        """打轴(left)/对轴(right) toggle。"""
+        self._align_mode = not is_left
         if self._align_mode:
-            # 切到对轴：立即把游标同步到当前帧
             self.canvas.set_current_frame(self._current_frame)
+
+    def _on_speed_toggle(self, is_left: bool) -> None:
+        """自动(left)/手动(right)变速 toggle。"""
+        self._on_speed_mode_changed(not is_left)
 
     # --- 热键标记 ---
 
@@ -494,7 +484,7 @@ class EditorWindow(QWidget):
         if not show_dir:
             self.cb_dir.setCurrentText("无")
         # 手动模式下更新速度选择可见性
-        if self.rb_speed_manual.isChecked():
+        if not self.toggle_speed.is_left():
             self._update_speed_visibility()
 
     def _on_select(self):
@@ -536,7 +526,7 @@ class EditorWindow(QWidget):
             return
         self.timeline = load_timeline(path)
         self.edit_map.setText(self.timeline.map_code)
-        self.rb_speed_manual.setChecked(self.timeline.speed_mode == "manual")
+        self.toggle_speed.set_left(self.timeline.speed_mode != "manual")
         self._on_speed_mode_changed(self.timeline.speed_mode == "manual")
         self._sync_candidates_from_timeline()
         self._refresh_table()
@@ -552,7 +542,7 @@ class EditorWindow(QWidget):
             return
         self.timeline.map_code = self.edit_map.text().strip()
         self.timeline.calibration_profile = self._profile_name
-        self.timeline.speed_mode = "manual" if self.rb_speed_manual.isChecked() else "auto"
+        self.timeline.speed_mode = "manual" if not self.toggle_speed.is_left() else "auto"
         self._collect_candidates()
         save_timeline(self.timeline, path)
         self.lbl_status.setText(f"已保存到 {path}")
