@@ -402,7 +402,12 @@ class ExecuteTimeline(CustomAction):
         一旦没真暂停后续逐帧/部署/技能全错。
         """
         if self._paused:
-            return
+            img = ctrl.post_screencap().wait().get()
+            reco = context.run_recognition("BattlePaused", img)
+            if reco and reco.hit:
+                return
+            logger.warning("内部暂停状态与游戏画面不一致，重新尝试暂停")
+            self._paused = False
         max_retries = 20
         for i in range(max_retries):
             afa_hotkey.tap_key(afa_hotkey.VK_F)
