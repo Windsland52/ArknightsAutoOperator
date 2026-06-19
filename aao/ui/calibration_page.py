@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 
 from aao import config
 from aao.core.timing import calibration
+from aao.ui.scrollbar_style import apply_themed_scrollbar
 from aao.utils.logger import logger
 
 if TYPE_CHECKING:
@@ -136,6 +137,7 @@ class CalibrationPage(QWidget):
         # 日志
         self.txt_log = QTextEdit()
         self.txt_log.setReadOnly(True)
+        apply_themed_scrollbar(self.txt_log, "QTextEdit { background: transparent; }")
         self.txt_log.setMaximumHeight(160)
         root.addWidget(self.txt_log)
         root.addStretch()

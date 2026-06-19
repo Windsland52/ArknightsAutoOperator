@@ -21,7 +21,8 @@ from PySide6.QtCore import QObject, Signal, SignalInstance
 _LEVEL_COLORS = {
     "TRACE": "#6b7280",
     "DEBUG": "#6b7280",
-    "INFO": "#d1d5db",
+    # INFO 不写死颜色，继承 QTextEdit 当前 palette 文本色（浅/深主题与背景图下都可读）。
+    "INFO": "",
     "SUCCESS": "#4caf50",
     "WARNING": "#ff9800",
     "ERROR": "#f44336",
@@ -55,6 +56,9 @@ class QtLogHandler:
         record = getattr(message, "record", None)
         if record:
             level = record["level"].name
-        color = _LEVEL_COLORS.get(level, "#d1d5db")
+        color = _LEVEL_COLORS.get(level, "")
         safe = html.escape(text)
-        self.emitter.log_html.emit(f'<span style="color:{color};">{safe}</span>')
+        if color:
+            self.emitter.log_html.emit(f'<span style="color:{color};">{safe}</span>')
+        else:
+            self.emitter.log_html.emit(f"<span>{safe}</span>")

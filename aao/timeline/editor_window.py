@@ -40,6 +40,7 @@ from aao.core.battle.action import ActionType, DirectionType
 from aao.timeline.io import load_timeline, save_timeline
 from aao.timeline.model import Timeline, TimelineAction
 from aao.ui.map_picker import MapPickerDialog
+from aao.ui.scrollbar_style import apply_themed_scrollbar
 from aao.ui.timeline_canvas import TimelineCanvas
 from aao.ui.toggle_switch import ToggleSwitch
 from aao.utils.logger import logger
@@ -124,6 +125,8 @@ class EditorWindow(QWidget):
 
         # 动作列表
         self.table = QTableWidget(0, 5)
+        self._style_table_scrollbars()
+        self.table.viewport().setStyleSheet("background: transparent;")
         self.table.setHorizontalHeaderLabels(["时间", "类型", "干员", "位置", "朝向"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -154,6 +157,7 @@ class EditorWindow(QWidget):
         add_row.addWidget(self.btn_cand_del)
         cl.addLayout(add_row)
         self.list_candidates = QListWidget()
+        apply_themed_scrollbar(self.list_candidates)
         cl.addWidget(self.list_candidates)
         right_splitter.addWidget(cand_box)
 
@@ -260,6 +264,10 @@ class EditorWindow(QWidget):
         is_dark = self.palette().color(QPalette.ColorRole.Window).lightness() < 128
         self.lbl_frame.setStyleSheet(f"color: {'#00e5ff' if is_dark else '#00789a'};")
 
+    def _style_table_scrollbars(self) -> None:
+        """打轴表格透明时，滚动条轨道/滑块也按主题着色，避免黑色轨道突兀。"""
+        apply_themed_scrollbar(self.table, "QTableWidget { background: transparent; }")
+
     def _show_shortcut_tip(self) -> None:
         """主动显示快捷键说明：悬停/点击都能看到，不依赖系统 tooltip 延迟。"""
         pos = self.btn_help.mapToGlobal(self.btn_help.rect().bottomLeft())
@@ -274,6 +282,7 @@ class EditorWindow(QWidget):
         # 主题切换 → palette 变 → 帧数标签换适配色
         if event.type() == QEvent.Type.PaletteChange:
             self._style_frame_label()
+            self._style_table_scrollbars()
         super().changeEvent(event)
 
     # --- 候选干员/装置管理 ---

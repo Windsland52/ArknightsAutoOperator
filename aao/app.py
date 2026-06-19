@@ -58,6 +58,7 @@ from aao.ui.calibration_page import CalibrationPage  # noqa: E402
 from aao.ui.farm_page import FarmPage  # noqa: E402
 from aao.ui.log_handler import QtLogHandler  # noqa: E402
 from aao.ui.runtime import build_tasker, connect_window  # noqa: E402
+from aao.ui.scrollbar_style import apply_themed_scrollbar  # noqa: E402
 from aao.ui.settings_page import SettingsPage  # noqa: E402
 from aao.utils.logger import logger, setup_logging  # noqa: E402
 from aao.utils.runtime_paths import configure_paths  # noqa: E402
@@ -308,6 +309,7 @@ class MainWindow(QMainWindow):
         area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         area.viewport().setObjectName("bg_layer")
         area.viewport().setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        apply_themed_scrollbar(area)
         return area
 
     def _build_ui(self) -> None:
@@ -319,6 +321,7 @@ class MainWindow(QMainWindow):
 
         # 左侧侧栏
         self.nav = QListWidget()
+        apply_themed_scrollbar(self.nav)
         self.nav.setFixedWidth(104)
         for label in ["🎯 凹图", "✏️ 打轴", "📏 校准", "⚙️ 设置", "ℹ️ 关于"]:
             QListWidgetItem(label, self.nav)
@@ -359,7 +362,8 @@ class MainWindow(QMainWindow):
         # 背景图从侧栏/内容栈/各页根透出。用 objectName 限定透明：只让这些容器本身透明，
         # 不级联到表格表头/下拉项等子控件——否则 "background: transparent" 会破坏子控件
         # 渲染（表头变黑、下拉项 focus 时字变白看不清）。控件本身保持 palette 不透明。
-        self.setStyleSheet("#bg_layer { background: transparent; }")
+        # 注意顺序：先 setObjectName，再 setStyleSheet；否则启动时 selector 可能没匹配，直到切主题
+        # repolish 后才透明。
         for w in (
             self.nav,
             self.stack,
@@ -372,6 +376,11 @@ class MainWindow(QMainWindow):
         ):
             w.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
             w.setObjectName("bg_layer")
+        self.setStyleSheet("#bg_layer { background: transparent; }")
+        for w in self.findChildren(QWidget):
+            w.style().unpolish(w)
+            w.style().polish(w)
+            w.update()
         self.settings_page.background_changed.connect(self._apply_background)
 
         # 新手引导：设置页连好窗口 → 引导中则跳校准页；校准页保存 → 跳凹图页 + 标记完成

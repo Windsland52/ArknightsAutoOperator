@@ -105,11 +105,14 @@ def _refresh_existing_widgets(app: QApplication, palette: QPalette) -> None:
     Qt 会异步向现有 widget 分发 PaletteChange；对下拉框/表格/按钮这类控件，
     视觉上可能要到下一次交互或下一轮切换才更新。这里主动同步 palette + repolish。
     """
+    from aao.ui.scrollbar_style import refresh_themed_scrollbars
+
     for w in app.allWidgets():
         w.setPalette(palette)
         w.style().unpolish(w)
         w.style().polish(w)
         w.update()
+    refresh_themed_scrollbars(app)
 
 
 def _apply_palette(palette: QPalette) -> None:

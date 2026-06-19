@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 
 from aao.core.timing.time_source import format_timer
 from aao.ui.farm_worker import FarmWorker
+from aao.ui.scrollbar_style import apply_themed_scrollbar
 from aao.utils.runtime_paths import project_root
 
 if TYPE_CHECKING:
@@ -117,15 +118,19 @@ class FarmPage(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         hist_box = QGroupBox("结果历史")
+        hist_box.setStyleSheet("QGroupBox { background: transparent; }")
         hl = QVBoxLayout(hist_box)
         self.list_history = QListWidget()
+        apply_themed_scrollbar(self.list_history, "QListWidget { background: transparent; }")
         hl.addWidget(self.list_history)
         splitter.addWidget(hist_box)
 
         log_box = QGroupBox("日志")
+        log_box.setStyleSheet("QGroupBox { background: transparent; }")
         ll = QVBoxLayout(log_box)
         self.txt_log = QTextEdit()
         self.txt_log.setReadOnly(True)
+        apply_themed_scrollbar(self.txt_log, "QTextEdit { background: transparent; }")
         self.txt_log.document().setMaximumBlockCount(2000)
         ll.addWidget(self.txt_log)
         splitter.addWidget(log_box)

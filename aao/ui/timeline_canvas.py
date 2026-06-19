@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 from aao import config
 from aao.core.battle.action import ActionType
 from aao.timeline.model import Timeline, TimelineAction
+from aao.ui.scrollbar_style import apply_themed_scrollbar
 
 # 布局常量
 _PX_PER_FRAME = 0.6  # 横向：每帧像素
@@ -102,6 +103,7 @@ class TimelineCanvas(QGraphicsView):
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.setFixedHeight(132)  # 3 条轨道 + 双刻度完整显示；竖直方向不滚动
+        apply_themed_scrollbar(self)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 

@@ -33,6 +33,7 @@ from aao import __version__, config
 from aao.resources.syncer import sync_all
 from aao.resources.updater import UpdateChecker
 from aao.ui import theme
+from aao.ui.scrollbar_style import apply_themed_scrollbar
 from aao.utils.logger import logger
 from aao.utils.runtime_paths import project_root
 
@@ -170,6 +171,7 @@ class SettingsPage(QWidget):
         # 右侧：窗口列表 + 操作按钮 + 状态
         right = QVBoxLayout()
         self.list_windows = QListWidget()
+        apply_themed_scrollbar(self.list_windows)
         self.list_windows.setMinimumWidth(320)
         self.list_windows.setMaximumHeight(140)
         right.addWidget(self.list_windows)
