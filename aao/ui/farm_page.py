@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QFormLayout,
     QGroupBox,
@@ -76,12 +77,14 @@ class FarmPage(QWidget):
         diff_row = QHBoxLayout()
         self.rb_normal = QRadioButton("普通")
         self.rb_sand = QRadioButton("沙盘推演")
+        self.chk_practice = QCheckBox("演习")
         self.rb_normal.setChecked(True)
         g = QButtonGroup(self)
         g.addButton(self.rb_normal)
         g.addButton(self.rb_sand)
         diff_row.addWidget(self.rb_normal)
         diff_row.addWidget(self.rb_sand)
+        diff_row.addWidget(self.chk_practice)
         diff_row.addStretch()
         form.addRow("难度:", diff_row)
 
@@ -148,7 +151,15 @@ class FarmPage(QWidget):
         # 信号
         self.btn_start.clicked.connect(self._on_start)
         self.btn_stop.clicked.connect(self._on_stop)
+        self.rb_sand.toggled.connect(self._update_practice_visible)
         self.btn_float_log.clicked.connect(self._show_floating_log)
+        self._update_practice_visible()
+
+    def _update_practice_visible(self) -> None:
+        is_sand = self.rb_sand.isChecked()
+        self.chk_practice.setVisible(not is_sand)
+        if is_sand:
+            self.chk_practice.setChecked(False)
 
     def _load_timelines(self) -> None:
         cur = self.cb_timeline.currentText()
@@ -236,6 +247,7 @@ class FarmPage(QWidget):
             QMessageBox.warning(self, "未选时间轴", "请先选择时间轴文件。")
             return
         difficulty = "sand" if self.rb_sand.isChecked() else "normal"
+        practice = self.chk_practice.isChecked() and difficulty != "sand"
         try:
             self._max_retries = int(self.edit_retries.text() or "0")
         except ValueError:
@@ -265,6 +277,7 @@ class FarmPage(QWidget):
             difficulty=difficulty,
             max_retries=self._max_retries,
             profile=profile,
+            practice=practice,
         )
         self._thread = QThread()
         self._worker.moveToThread(self._thread)
@@ -342,6 +355,7 @@ class FarmPage(QWidget):
             self.cb_timeline,
             self.rb_normal,
             self.rb_sand,
+            self.chk_practice,
             self.edit_retries,
             self.cb_profile,
         ):

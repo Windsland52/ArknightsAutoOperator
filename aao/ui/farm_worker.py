@@ -50,6 +50,7 @@ class FarmWorker(QObject):
         difficulty: str,
         max_retries: int,
         profile: str | None,
+        practice: bool = False,
     ):
         super().__init__()
         self._controller = controller
@@ -58,6 +59,7 @@ class FarmWorker(QObject):
         self._difficulty = difficulty
         self._max_retries = max_retries
         self._profile = profile
+        self._practice = practice
         self._stopping = False
         self._stopped_by_user = False
 
@@ -102,11 +104,12 @@ class FarmWorker(QObject):
             exec_param["calibration"] = self._profile
         pipeline["Farm@Execute"]["custom_action_param"] = json.dumps(exec_param, ensure_ascii=False)
 
-        # 难度分支
+        # 难度/演习分支（参考 interface.json：沙盘无演习；普通/自选难度才切 StartButton1 expected）
         if self._difficulty == "sand":
             anchor_target = "Farm@SwitchDifficulty"
         else:
             anchor_target = "Farm@StartButton1"
+            pipeline["Farm@StartButton1"]["expected"] = ["演习" if self._practice else "开始行动"]
         pipeline["Farm"]["anchor"] = {"Farm@SwitchDifficulty": anchor_target}
 
         # max-retries 次数监控线程
@@ -128,9 +131,10 @@ class FarmWorker(QObject):
             threading.Thread(target=_count_stop, daemon=True).start()
 
         logger.info(
-            "开始凹图（时间轴=%s，难度=%s，最多 %s 次）",
+            "开始凹图（时间轴=%s，难度=%s%s，最多 %s 次）",
             self._timeline_path,
             self._difficulty,
+            "，演习" if self._practice and self._difficulty != "sand" else "",
             self._max_retries or "∞",
         )
 
