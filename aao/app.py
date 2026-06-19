@@ -102,6 +102,14 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("ArknightsAutoOperator")
         self.resize(960, 620)
+        # 窗口图标（左上角 + Windows 任务栏）
+        from PySide6.QtGui import QIcon
+
+        from aao.utils.runtime_paths import project_root
+
+        icon_path = project_root() / "logo.png"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
 
         self._controller = controller
         self._tasker = tasker
@@ -519,6 +527,17 @@ def _ensure_admin() -> None:
 
 def main() -> int:
     _ensure_admin()
+
+    # Windows 任务栏分组：设 AppUserModelID，否则用 Python/PyInstaller 默认图标
+    if sys.platform == "win32":
+        import ctypes
+
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "Windsland52.ArknightsAutoOperator"
+            )  # pyright: ignore[reportAttributeAccessIssue]
+        except (AttributeError, OSError):
+            pass
     # 先 configure_paths 让 settings_page 能读到 config/settings.json
     configure_paths()
     # 确保 AFA 在运行（凹图热键依赖；没在则拉起自带 AFA.exe）
