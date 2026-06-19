@@ -69,6 +69,7 @@ class ExecuteTimeline(CustomAction):
     _leaked: bool = False
     _hwnd: int | None = None
     _speed: int = 1  # 当前游戏倍速（1 或 2），执行开始强制归 1
+    _manual_speed: bool = False  # timeline 含变速动作时不走自动变速
 
     # 单例回调：每轮 _execute 末尾触发（在 MAA tasker 线程）。
     # 调用方负责跨线程转 Qt 信号。None = 不回调。
@@ -91,6 +92,7 @@ class ExecuteTimeline(CustomAction):
         # 优先 timeline_path（从文件加载，文件内含 map_code），兼容显式 timeline 数组
         timeline_path = params.get("timeline_path")
         tl_calib = ""
+        tl_speed_mode = "auto"
         if timeline_path:
             tl = self._load_timeline_file(timeline_path)
             if tl is None:
@@ -98,6 +100,7 @@ class ExecuteTimeline(CustomAction):
             raw_actions = tl.get("actions", [])
             map_code = params.get("map_code") or tl.get("map_code", "")
             tl_calib = tl.get("calibration_profile", "")
+            tl_speed_mode = tl.get("speed_mode", "auto")
         else:
             raw_actions = params.get("timeline", [])
             map_code = params.get("map_code", "")
@@ -148,12 +151,23 @@ class ExecuteTimeline(CustomAction):
         afa_hotkey.activate(self._hwnd)
         logger.info("游戏窗口 HWND=%s，已激活（AFA 热键就绪）", self._hwnd)
 
+        # timeline.speed_mode = "manual" → 手动模式（不走自动变速）
+        self._manual_speed = tl_speed_mode == "manual"
+        if self._manual_speed:
+            logger.info("手动变速模式（timeline speed_mode=manual）")
+
         for i, action in enumerate(actions):
             if context.tasker.stopping:
                 logger.info("用户停止")
                 return CustomAction.RunResult(success=False)
 
             logger.info("[%d/%d] %s", i + 1, len(actions), action)
+
+            # 变速动作：直接设速度，不暂停不步进
+            if action.action_type == ActionType.SPEED:
+                self._set_speed(context, action.speed or 1)
+                continue
+
             self._perform_action(context, ctrl, action, time_source)
 
             if self._leaked:
@@ -336,7 +350,8 @@ class ExecuteTimeline(CustomAction):
     ) -> None:
         """等待直到累计帧到达 target_frame（运行态）。
 
-        期间按剩余距离动态调速：远（> SPEED_UP_THRESHOLD）开 2x，近则回 1x；
+        自动模式：按剩余距离动态调速（远→2x，近→1x）。
+        手动模式（timeline 含变速动作）：保持当前速度，不自动切换。
         每 1s 检测一次漏怪。
         """
         deadline = time.time() + 120
@@ -348,15 +363,16 @@ class ExecuteTimeline(CustomAction):
             lf = ts.update(img)
             if lf is not None:
                 current = ts.total_elapsed_frames
-                remaining = target_frame - current
-                # 倍速状态机：开局第一个周期（帧 0-29）不切 2x（费用条未稳）；
-                # 之后剩余远(> SPEED_UP_THRESHOLD) → 2x，剩余近 → 1x
-                if current < config.TICK_MAX_DEFAULT:
-                    want_speed = 1
-                else:
-                    want_speed = 2 if remaining > config.SPEED_UP_THRESHOLD else 1
-                if want_speed != self._speed:
-                    self._set_speed(context, want_speed)
+                # 手动模式：不自动变速，保持 self._speed
+                if not self._manual_speed:
+                    remaining = target_frame - current
+                    # 自动倍速：开局第一周期不切 2x；之后远→2x，近→1x
+                    if current < config.TICK_MAX_DEFAULT:
+                        want_speed = 1
+                    else:
+                        want_speed = 2 if remaining > config.SPEED_UP_THRESHOLD else 1
+                    if want_speed != self._speed:
+                        self._set_speed(context, want_speed)
                 if current >= target_frame:
                     return
             # 漏怪检测：血量图标变红（BattleHpFlag2），低频（1s），不影响计时

@@ -91,6 +91,14 @@ class EditorWindow(QWidget):
         mode_group.addButton(self.rb_align)
         self.rb_align.toggled.connect(self._on_mode_changed)
 
+        self.rb_speed_auto = QRadioButton("自动变速")
+        self.rb_speed_manual = QRadioButton("手动变速")
+        self.rb_speed_auto.setChecked(True)
+        speed_group = QButtonGroup(self)
+        speed_group.addButton(self.rb_speed_auto)
+        speed_group.addButton(self.rb_speed_manual)
+        self.rb_speed_manual.toggled.connect(self._on_speed_mode_changed)
+
         self.lbl_frame = QLabel("--")
         f = QFont("Consolas", 14)
         f.setBold(True)
@@ -106,6 +114,9 @@ class EditorWindow(QWidget):
         top.addSpacing(20)
         top.addWidget(self.rb_author)
         top.addWidget(self.rb_align)
+        top.addSpacing(20)
+        top.addWidget(self.rb_speed_auto)
+        top.addWidget(self.rb_speed_manual)
         top.addStretch()
         top.addWidget(self.lbl_frame)
         top.addSpacing(20)
@@ -156,15 +167,29 @@ class EditorWindow(QWidget):
 
         # --- 编辑面板 ---
         panel = QWidget()
+        panel.setMinimumHeight(200)
         p_layout = QGridLayout(panel)
         p_layout.setContentsMargins(8, 8, 8, 8)
+        # 固定列宽：标签列不缩放，控件列填满（隐藏行时不影响列宽）
+        p_layout.setColumnMinimumWidth(0, 40)
+        p_layout.setColumnStretch(0, 0)
+        p_layout.setColumnStretch(1, 1)
 
         p_layout.addWidget(QLabel("类型:"), 0, 0)
         self.cb_type = QComboBox()
-        self.cb_type.addItems(["部署", "技能", "撤退"])
+        self.cb_type.addItems(["部署", "技能", "撤退", "变速"])
+        self.lbl_speed = QLabel("速度:")
+        p_layout.addWidget(self.lbl_speed, 4, 0)
+        self.cb_speed = QComboBox()
+        self.cb_speed.addItems(["1x", "2x"])
+        p_layout.addWidget(self.cb_speed, 4, 1)
+        # 默认隐藏变速相关（自动模式下不需要）
+        self.lbl_speed.hide()
+        self.cb_speed.hide()
         p_layout.addWidget(self.cb_type, 0, 1)
 
-        p_layout.addWidget(QLabel("干员:"), 1, 0)
+        self.lbl_oper = QLabel("干员:")
+        p_layout.addWidget(self.lbl_oper, 1, 0)
         self.cb_oper = QComboBox()
         self.cb_oper.setEditable(True)
         oper_completer = QCompleter()
@@ -172,19 +197,22 @@ class EditorWindow(QWidget):
         self.cb_oper.setCompleter(oper_completer)
         p_layout.addWidget(self.cb_oper, 1, 1)
 
-        p_layout.addWidget(QLabel("位置:"), 2, 0)
+        self.lbl_pos = QLabel("位置:")
+        p_layout.addWidget(self.lbl_pos, 2, 0)
         pos_row = QHBoxLayout()
+        pos_row.setContentsMargins(0, 0, 0, 0)
         self.edit_pos = QLineEdit()
         self.edit_pos.setMaximumWidth(60)
         self.edit_pos.setPlaceholderText("D2")
         self.btn_pick = QPushButton("📍")
         pos_row.addWidget(self.edit_pos)
         pos_row.addWidget(self.btn_pick)
-        pos_w = QWidget()
-        pos_w.setLayout(pos_row)
-        p_layout.addWidget(pos_w, 2, 1)
+        self.pos_w = QWidget()
+        self.pos_w.setLayout(pos_row)
+        p_layout.addWidget(self.pos_w, 2, 1)
 
-        p_layout.addWidget(QLabel("朝向:"), 3, 0)
+        self.lbl_dir = QLabel("朝向:")
+        p_layout.addWidget(self.lbl_dir, 3, 0)
         self.cb_dir = QComboBox()
         self.cb_dir.addItems(["无", "上", "下", "左", "右"])
         p_layout.addWidget(self.cb_dir, 3, 1)
@@ -196,7 +224,7 @@ class EditorWindow(QWidget):
         btn_row.addWidget(self.btn_delete)
         btn_w = QWidget()
         btn_w.setLayout(btn_row)
-        p_layout.addWidget(btn_w, 4, 0, 1, 2)
+        p_layout.addWidget(btn_w, 5, 0, 1, 2)
         right_splitter.addWidget(panel)
 
         right_splitter.setStretchFactor(0, 1)
@@ -221,6 +249,9 @@ class EditorWindow(QWidget):
         self.btn_cand_del.clicked.connect(self._del_candidate)
         self.edit_cand.returnPressed.connect(self._add_candidate)
         self.list_candidates.currentRowChanged.connect(self._on_candidate_selected)
+
+        # 初始化：默认自动变速 → 移除"变速"选项 + 隐藏速度选择
+        self._on_speed_mode_changed(False)
 
     # --- 候选干员/装置管理 ---
 
@@ -360,9 +391,13 @@ class EditorWindow(QWidget):
             time_str = f"{a.frame}" if a.frame is not None else f"{a.time}s"
             self.table.setItem(i, 0, QTableWidgetItem(time_str))
             self.table.setItem(i, 1, QTableWidgetItem(a.action_type.value))
-            self.table.setItem(i, 2, QTableWidgetItem(a.oper))
-            self.table.setItem(i, 3, QTableWidgetItem(a.pos))
-            # 部署才显示朝向，技能/撤退显示 —
+            if a.action_type == ActionType.SPEED:
+                self.table.setItem(i, 2, QTableWidgetItem(f"{a.speed or 1}x"))
+                self.table.setItem(i, 3, QTableWidgetItem("—"))
+            else:
+                self.table.setItem(i, 2, QTableWidgetItem(a.oper))
+                self.table.setItem(i, 3, QTableWidgetItem(a.pos))
+            # 部署才显示朝向，技能/撤退/变速显示 —
             if a.action_type == ActionType.DEPLOY and a.direction != DirectionType.NONE:
                 dir_text = a.direction.value
             else:
@@ -401,12 +436,52 @@ class EditorWindow(QWidget):
                 self.edit_pos.setText(pos)
                 self.lbl_status.setText(f"已选位置 {pos}")
 
+    def _on_speed_mode_changed(self, manual: bool) -> None:
+        """自动/手动变速切换 → 显示/隐藏变速动作类型和速度选择。"""
+        if manual:
+            # 手动模式：类型下拉加"变速"，速度选择可见
+            if self.cb_type.findText("变速") < 0:
+                self.cb_type.addItem("变速")
+            self._update_speed_visibility()
+        else:
+            # 自动模式：移除"变速"，隐藏速度选择
+            idx = self.cb_type.findText("变速")
+            if idx >= 0:
+                self.cb_type.removeItem(idx)
+            self.lbl_speed.hide()
+            self.cb_speed.hide()
+
+    def _update_speed_visibility(self) -> None:
+        """手动模式下，类型=变速时显示速度选择，否则隐藏。"""
+        is_speed = self.cb_type.currentText() == "变速"
+        self.lbl_speed.setVisible(is_speed)
+        self.cb_speed.setVisible(is_speed)
+
     def _on_type_changed(self, type_text: str) -> None:
-        """动作类型变化 → 技能/撤退禁用朝向框。"""
+        """动作类型变化 → 显示/隐藏相关字段。"""
         is_deploy = type_text == "部署"
-        self.cb_dir.setEnabled(is_deploy)
-        if not is_deploy:
+        is_speed = type_text == "变速"
+        show_oper = not is_speed
+        show_pos = not is_speed
+        show_dir = is_deploy
+        # 干员
+        self.lbl_oper.setVisible(show_oper)
+        self.cb_oper.setVisible(show_oper)
+        if not show_oper:
+            self.cb_oper.clearEditText()
+        # 位置
+        self.lbl_pos.setVisible(show_pos)
+        self.pos_w.setVisible(show_pos)
+        if not show_pos:
+            self.edit_pos.clear()
+        # 朝向
+        self.lbl_dir.setVisible(show_dir)
+        self.cb_dir.setVisible(show_dir)
+        if not show_dir:
             self.cb_dir.setCurrentText("无")
+        # 手动模式下更新速度选择可见性
+        if self.rb_speed_manual.isChecked():
+            self._update_speed_visibility()
 
     def _on_select(self):
         row = self.table.currentRow()
@@ -417,6 +492,7 @@ class EditorWindow(QWidget):
         self.cb_oper.setCurrentText(a.oper)
         self.edit_pos.setText(a.pos)
         self.cb_dir.setCurrentText(a.direction.value)
+        self.cb_speed.setCurrentIndex((a.speed or 1) - 1)
         self._on_type_changed(a.action_type.value)
 
     def _on_apply(self):
@@ -428,6 +504,7 @@ class EditorWindow(QWidget):
         a.oper = self.cb_oper.currentText().strip()
         a.pos = self.edit_pos.text().strip()
         a.direction = DirectionType(self.cb_dir.currentText())
+        a.speed = self.cb_speed.currentIndex() + 1 if a.action_type == ActionType.SPEED else None
         self._refresh_table()
         self.lbl_status.setText(f"已更新 #{row + 1}")
 
@@ -445,6 +522,8 @@ class EditorWindow(QWidget):
             return
         self.timeline = load_timeline(path)
         self.edit_map.setText(self.timeline.map_code)
+        self.rb_speed_manual.setChecked(self.timeline.speed_mode == "manual")
+        self._on_speed_mode_changed(self.timeline.speed_mode == "manual")
         self._sync_candidates_from_timeline()
         self._refresh_table()
         self.lbl_status.setText(f"已加载 {len(self.timeline.actions)} 个动作")
@@ -459,6 +538,7 @@ class EditorWindow(QWidget):
             return
         self.timeline.map_code = self.edit_map.text().strip()
         self.timeline.calibration_profile = self._profile_name
+        self.timeline.speed_mode = "manual" if self.rb_speed_manual.isChecked() else "auto"
         self._collect_candidates()
         save_timeline(self.timeline, path)
         self.lbl_status.setText(f"已保存到 {path}")

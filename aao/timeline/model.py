@@ -35,6 +35,7 @@ class TimelineAction:
     oper: str = ""
     pos: str = ""  # 棋盘记号 "D2"
     direction: DirectionType = DirectionType.NONE
+    speed: int | None = None  # 变速动作的目标速度（1 或 2）
     note: str = ""  # 备注
 
     def to_dict(self) -> dict[str, Any]:
@@ -50,6 +51,8 @@ class TimelineAction:
             d["pos"] = self.pos
         if self.direction != DirectionType.NONE:
             d["direction"] = self.direction.value
+        if self.speed is not None:
+            d["speed"] = self.speed
         if self.note:
             d["note"] = self.note
         return d
@@ -63,6 +66,7 @@ class TimelineAction:
             oper=d.get("oper", ""),
             pos=d.get("pos", ""),
             direction=DirectionType(d.get("direction", "无")),
+            speed=d.get("speed"),
             note=d.get("note", ""),
         )
 
@@ -90,6 +94,7 @@ class Timeline:
     name: str = ""  # 用户可读名称
     candidates: list[str] = field(default_factory=list)  # 候选干员/装置名
     calibration_profile: str = ""  # 打轴时用的校准 profile 文件名
+    speed_mode: str = "auto"  # "auto"（自动变速）或 "manual"（手动变速）
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -101,6 +106,8 @@ class Timeline:
         }
         if self.calibration_profile:
             d["calibration_profile"] = self.calibration_profile
+        if self.speed_mode != "auto":
+            d["speed_mode"] = self.speed_mode
         return d
 
     @classmethod
@@ -111,6 +118,7 @@ class Timeline:
             name=d.get("name", ""),
             candidates=d.get("candidates", []),
             calibration_profile=d.get("calibration_profile", ""),
+            speed_mode=d.get("speed_mode", "auto"),
             actions=[TimelineAction.from_dict(a) for a in d.get("actions", [])],
         )
 

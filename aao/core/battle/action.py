@@ -14,6 +14,7 @@ class ActionType(Enum):
     DEPLOY = "部署"
     SKILL = "技能"
     RETREAT = "撤退"
+    SPEED = "变速"
 
 
 class DirectionType(Enum):
@@ -35,6 +36,7 @@ class Action:
     oper: str | None = None
     pos: str | None = None  # 棋盘记号如 "D2"
     direction: DirectionType | None = None
+    speed: int | None = None  # 变速动作的目标速度（1 或 2）
     alias: str | None = None
 
     # 运行时填充
