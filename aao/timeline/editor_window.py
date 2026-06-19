@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 
-from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtGui import QFont, QPalette
 from PySide6.QtWidgets import (
     QComboBox,
@@ -27,9 +27,11 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -77,7 +79,7 @@ class EditorWindow(QWidget):
         self.lbl_map = QLabel("关卡:")
         self.edit_map = QLineEdit()
         self.edit_map.setPlaceholderText("如 1-7")
-        self.edit_map.setMaximumWidth(120)
+        self.edit_map.setMinimumWidth(90)
         self._map_completer = QCompleter()
         self._map_completer.setFilterMode(Qt.MatchFlag.MatchContains)
         self.edit_map.setCompleter(self._map_completer)
@@ -94,19 +96,22 @@ class EditorWindow(QWidget):
         f.setBold(True)
         self.lbl_frame.setFont(f)
 
-        self.btn_help = QPushButton("❓ F8=部署 F9=技能 F10=撤退")
+        self.btn_help = QPushButton("❓ 快捷键")
+        self.btn_help.setToolTip("F8：标记部署\nF9：标记技能\nF10：标记撤退")
+        self.btn_help.setToolTipDuration(10000)
+        self.btn_help.installEventFilter(self)
 
         top.addWidget(self.btn_open)
         top.addWidget(self.btn_save)
         top.addWidget(self.lbl_map)
-        top.addWidget(self.edit_map)
-        top.addSpacing(20)
+        top.addWidget(self.edit_map, 1)
+        top.addSpacing(8)
         top.addWidget(self.toggle_mode)
-        top.addSpacing(20)
+        top.addSpacing(8)
         top.addWidget(self.toggle_speed)
-        top.addStretch()
+        top.addStretch(1)
         top.addWidget(self.lbl_frame)
-        top.addSpacing(20)
+        top.addSpacing(8)
         top.addWidget(self.btn_help)
         layout.addLayout(top)
 
@@ -123,7 +128,7 @@ class EditorWindow(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        self.table.setMinimumWidth(400)
+        self.table.setMinimumWidth(320)
         middle.addWidget(self.table, 3)
 
         # 右侧竖分两半：上=候选干员/装置，下=动作编辑面板
@@ -154,9 +159,11 @@ class EditorWindow(QWidget):
 
         # --- 编辑面板 ---
         panel = QWidget()
-        panel.setMinimumHeight(200)
+        panel.setMaximumHeight(120)
+        panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         p_layout = QGridLayout(panel)
-        p_layout.setContentsMargins(8, 8, 8, 8)
+        p_layout.setContentsMargins(4, 4, 4, 4)
+        p_layout.setVerticalSpacing(2)
         # 固定列宽：标签列不缩放，控件列填满（隐藏行时不影响列宽）
         p_layout.setColumnMinimumWidth(0, 40)
         p_layout.setColumnStretch(0, 0)
@@ -188,15 +195,18 @@ class EditorWindow(QWidget):
         p_layout.addWidget(self.lbl_pos, 2, 0)
         pos_row = QHBoxLayout()
         pos_row.setContentsMargins(0, 0, 0, 0)
+        pos_row.setSpacing(2)
         self.edit_pos = QLineEdit()
-        self.edit_pos.setMaximumWidth(60)
+        self.edit_pos.setFixedWidth(48)
         self.edit_pos.setPlaceholderText("D2")
         self.btn_pick = QPushButton("📍")
+        self.btn_pick.setFixedWidth(28)
         pos_row.addWidget(self.edit_pos)
         pos_row.addWidget(self.btn_pick)
         self.pos_w = QWidget()
+        self.pos_w.setFixedWidth(78)
         self.pos_w.setLayout(pos_row)
-        p_layout.addWidget(self.pos_w, 2, 1)
+        p_layout.addWidget(self.pos_w, 2, 1, Qt.AlignmentFlag.AlignLeft)
 
         self.lbl_dir = QLabel("朝向:")
         p_layout.addWidget(self.lbl_dir, 3, 0)
@@ -207,6 +217,8 @@ class EditorWindow(QWidget):
         self.btn_apply = QPushButton("✓ 应用")
         self.btn_delete = QPushButton("✕ 删除")
         btn_row = QHBoxLayout()
+        btn_row.setContentsMargins(0, 0, 0, 0)
+        btn_row.setSpacing(4)
         btn_row.addWidget(self.btn_apply)
         btn_row.addWidget(self.btn_delete)
         btn_w = QWidget()
@@ -214,9 +226,11 @@ class EditorWindow(QWidget):
         p_layout.addWidget(btn_w, 5, 0, 1, 2)
         right_splitter.addWidget(panel)
 
+        # 上方候选列表吃掉竖向剩余空间；下方编辑面板按内容高度，避免空白挤占候选区。
         right_splitter.setStretchFactor(0, 1)
-        right_splitter.setStretchFactor(1, 1)
-        right_splitter.setMaximumWidth(280)
+        right_splitter.setStretchFactor(1, 0)
+        right_splitter.setSizes([440, 120])
+        right_splitter.setMaximumWidth(240)
         middle.addWidget(right_splitter, 1)
         layout.addLayout(middle, 1)
 
@@ -230,6 +244,7 @@ class EditorWindow(QWidget):
         self.btn_apply.clicked.connect(self._on_apply)
         self.btn_delete.clicked.connect(self._on_delete)
         self.btn_pick.clicked.connect(self._on_pick_pos)
+        self.btn_help.clicked.connect(self._show_shortcut_tip)
         self.cb_type.currentTextChanged.connect(self._on_type_changed)
         self.table.currentItemChanged.connect(self._on_select)
         self.btn_cand_add.clicked.connect(self._add_candidate)
@@ -244,6 +259,16 @@ class EditorWindow(QWidget):
         """帧数显示用强调青色，按当前主题明暗选亮青/深青（浅底可读）。"""
         is_dark = self.palette().color(QPalette.ColorRole.Window).lightness() < 128
         self.lbl_frame.setStyleSheet(f"color: {'#00e5ff' if is_dark else '#00789a'};")
+
+    def _show_shortcut_tip(self) -> None:
+        """主动显示快捷键说明：悬停/点击都能看到，不依赖系统 tooltip 延迟。"""
+        pos = self.btn_help.mapToGlobal(self.btn_help.rect().bottomLeft())
+        QToolTip.showText(pos, self.btn_help.toolTip(), self.btn_help, self.btn_help.rect(), 10000)
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        if obj is self.btn_help and event.type() == QEvent.Type.Enter:
+            self._show_shortcut_tip()
+        return super().eventFilter(obj, event)
 
     def changeEvent(self, event: QEvent) -> None:
         # 主题切换 → palette 变 → 帧数标签换适配色

@@ -40,7 +40,9 @@ from PySide6.QtWidgets import (  # noqa: E402
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QScrollArea,
     QStackedWidget,
+    QWidget,
 )
 
 from aao import config  # noqa: E402
@@ -101,7 +103,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         super().__init__()
         self.setWindowTitle("ArknightsAutoOperator")
-        self.resize(960, 620)
+        self.resize(860, 560)
         # 窗口图标（左上角 + Windows 任务栏）
         from PySide6.QtGui import QIcon
 
@@ -296,6 +298,18 @@ class MainWindow(QMainWindow):
         save_settings(s)
         self.nav.setCurrentRow(_PAGE_FARM)
 
+    def _scroll_page(self, page: QWidget) -> QScrollArea:
+        """把页面包进滚动区：窗口保持小巧，页面内容超出时滚动。"""
+        area = QScrollArea()
+        area.setWidget(page)
+        area.setWidgetResizable(True)
+        area.setFrameShape(QScrollArea.Shape.NoFrame)
+        area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        area.viewport().setObjectName("bg_layer")
+        area.viewport().setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        return area
+
     def _build_ui(self) -> None:
         central = BackgroundContainer()  # 带 cover 背景图的 central（paintEvent 画图）
         self.bg_container = central
@@ -305,7 +319,7 @@ class MainWindow(QMainWindow):
 
         # 左侧侧栏
         self.nav = QListWidget()
-        self.nav.setFixedWidth(120)
+        self.nav.setFixedWidth(104)
         for label in ["🎯 凹图", "✏️ 打轴", "📏 校准", "⚙️ 设置", "ℹ️ 关于"]:
             QListWidgetItem(label, self.nav)
         self.nav.setCurrentRow(0)
@@ -328,11 +342,15 @@ class MainWindow(QMainWindow):
         if self._controller is not None:
             self.calib_page.set_runtime(self._controller)
 
-        self.stack.addWidget(self.farm_page)
-        self.stack.addWidget(self.editor_page)
-        self.stack.addWidget(self.calib_page)
-        self.stack.addWidget(self.settings_page)
-        self.stack.addWidget(self.about_page)
+        self.page_widgets = [
+            self._scroll_page(self.farm_page),
+            self.editor_page,  # 打轴页是工作区：一屏内布局，不加外层滚动条
+            self._scroll_page(self.calib_page),
+            self._scroll_page(self.settings_page),
+            self._scroll_page(self.about_page),
+        ]
+        for page in self.page_widgets:
+            self.stack.addWidget(page)
         root.addWidget(self.stack, 1)
 
         self.setCentralWidget(central)
@@ -345,6 +363,7 @@ class MainWindow(QMainWindow):
         for w in (
             self.nav,
             self.stack,
+            *self.page_widgets,
             self.farm_page,
             self.editor_page,
             self.calib_page,

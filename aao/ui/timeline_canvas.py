@@ -101,6 +101,7 @@ class TimelineCanvas(QGraphicsView):
         # view 背景跟随 palette（Base）——打轴页随全局主题，不固定深色
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.setFixedHeight(132)  # 3 条轨道 + 双刻度完整显示；竖直方向不滚动
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
