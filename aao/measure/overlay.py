@@ -124,6 +124,12 @@ class OverlayWindow(QWidget):
         painter.setPen(border)
         painter.drawPath(path)
 
+    def reset_layout(self, x: int, y: int) -> None:
+        self._snap_follow = None
+        self.resize(170, 72)
+        self.move(x, y)
+        self._save_window_state()
+
     def on_state(self, state: dict) -> None:
         running = state.get("isRunning", False)
         cf = state.get("currentFrame")

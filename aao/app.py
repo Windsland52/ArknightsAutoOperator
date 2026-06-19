@@ -162,6 +162,7 @@ class MainWindow(QMainWindow):
         self._force_quit = False
         self.tray = TrayController(self)
         self.tray.show_requested.connect(self._restore_from_tray)
+        self.tray.reset_layout_requested.connect(self._reset_window_layout)
         self.tray.quit_requested.connect(self._quit_from_tray)
         self.tray.show()
 
@@ -512,6 +513,26 @@ class MainWindow(QMainWindow):
         self.showNormal()
         self.raise_()
         self.activateWindow()
+
+    def _reset_window_layout(self) -> None:
+        """托盘菜单：重置主窗口位置/大小，并清除悬浮窗持久化布局。"""
+        from aao.ui import floating_state
+
+        floating_state.clear_all()
+        geo = self.screen().availableGeometry()
+        self.resize(860, 560)
+        self.move(geo.center().x() - self.width() // 2, geo.center().y() - self.height() // 2)
+        self._restore_from_tray()
+
+        margin = 20
+        if self.overlay is not None:
+            self.overlay.reset_layout(geo.right() - 170 - margin, geo.top() + margin)
+        log = getattr(self.farm_page, "_floating_log", None)
+        if log is not None:
+            x = geo.right() - 360 - margin
+            y = geo.top() + margin + (self.overlay.height() + 12 if self.overlay is not None else 0)
+            log.reset_layout(x, y)
+        self.tray.show_message("ArknightsAutoOperator", "已重置主窗口和悬浮窗布局。")
 
     def _quit_from_tray(self) -> None:
         """托盘「退出」：停所有 worker + 退出应用。"""

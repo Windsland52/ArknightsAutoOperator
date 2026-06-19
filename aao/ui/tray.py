@@ -28,6 +28,7 @@ class TrayController(QObject):
 
     quit_requested = Signal()  # 用户点「退出」
     show_requested = Signal()  # 用户点「显示」/ 双击图标
+    reset_layout_requested = Signal()  # 重置主窗口 + 悬浮窗布局
 
     def __init__(self, parent: QWidget):
         super().__init__(parent)
@@ -37,9 +38,12 @@ class TrayController(QObject):
         menu = QMenu(parent)
         act_show = QAction("显示窗口", parent)
         act_show.triggered.connect(self.show_requested.emit)
+        act_reset = QAction("重置窗口布局", parent)
+        act_reset.triggered.connect(self.reset_layout_requested.emit)
         act_quit = QAction("退出", parent)
         act_quit.triggered.connect(self.quit_requested.emit)
         menu.addAction(act_show)
+        menu.addAction(act_reset)
         menu.addSeparator()
         menu.addAction(act_quit)
 

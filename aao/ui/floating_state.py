@@ -17,6 +17,12 @@ from typing import Any
 from PySide6.QtWidgets import QWidget
 
 
+def clear_all() -> None:
+    s = _load_settings()
+    s.pop("floating_windows", None)
+    _save_settings(s)
+
+
 def load_state(window_id: str) -> dict[str, Any]:
     s = _load_settings()
     data = s.get("floating_windows", {})

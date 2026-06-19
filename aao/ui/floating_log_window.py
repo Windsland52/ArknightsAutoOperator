@@ -197,6 +197,12 @@ class FloatingLogWindow(QWidget):
             _WINDOW_ID, self._snap_follow.to_dict() if self._snap_follow is not None else None
         )
 
+    def reset_layout(self, x: int, y: int) -> None:
+        self._snap_follow = None
+        self.resize(360, 220)
+        self.move(x, y)
+        self._save_window_state()
+
     def set_always_on_top(self, enabled: bool) -> None:
         visible = self.isVisible()
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, enabled)
