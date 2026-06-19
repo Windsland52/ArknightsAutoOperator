@@ -12,7 +12,7 @@ from PySide6.QtCore import (
     Qt,
     Signal,
 )
-from PySide6.QtGui import QColor, QPainter, QPaintEvent
+from PySide6.QtGui import QColor, QPainter, QPaintEvent, QPalette
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 
@@ -37,18 +37,23 @@ class _Track(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         w, h = self.width(), self.height()
 
-        # 背景圆角矩形
-        bg_color = QColor("#1e5f3f") if self._knob_ratio < 0.5 else QColor("#5a3a8a")
-        p.setBrush(bg_color)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawRoundedRect(0, 0, w, h, h // 2, h // 2)
+        is_dark = self.palette().color(QPalette.ColorRole.Window).lightness() < 128
+        track_color = QColor(255, 255, 255, 38) if is_dark else QColor(0, 0, 0, 24)
+        border_color = QColor(255, 255, 255, 55) if is_dark else QColor(0, 0, 0, 45)
+        knob_color = QColor("#3d7dce")
 
-        # 滑块
-        knob_size = h - 6
-        margin = 3
+        # 轻量灰色轨道：不再用绿/紫强色，避免顶栏抢眼。
+        p.setBrush(track_color)
+        p.setPen(border_color)
+        p.drawRoundedRect(0, 0, w - 1, h - 1, h // 2, h // 2)
+
+        # 滑块用全局强调蓝，表示当前选中侧。
+        knob_size = h - 8
+        margin = 4
         travel = w - knob_size - margin * 2
         kx = margin + travel * self._knob_ratio
-        p.setBrush(QColor("#ffffff"))
+        p.setBrush(knob_color)
+        p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(int(kx), margin, knob_size, knob_size, knob_size // 2, knob_size // 2)
 
 
@@ -68,8 +73,8 @@ class ToggleSwitch(QWidget):
         self._is_left = True
 
         self._track = _Track(self)
-        self._track.setFixedHeight(28)
-        self._track.setFixedWidth(52)
+        self._track.setFixedHeight(24)
+        self._track.setFixedWidth(46)
 
         self._left_label = QLabel(left_text)
         self._right_label = QLabel(right_text)
@@ -77,7 +82,7 @@ class ToggleSwitch(QWidget):
 
         wrap = QHBoxLayout(self)
         wrap.setContentsMargins(0, 0, 0, 0)
-        wrap.setSpacing(4)
+        wrap.setSpacing(3)
         wrap.addWidget(self._left_label)
         wrap.addWidget(self._track)
         wrap.addWidget(self._right_label)
