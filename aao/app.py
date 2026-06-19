@@ -388,6 +388,56 @@ class MainWindow(QMainWindow):
     def set_log_handler(self, handler: QtLogHandler) -> None:
         self.farm_page.set_log_handler(handler)
 
+    def _get_close_action(self) -> str:
+        """点 X 时的行为：读 settings，无偏好则弹窗询问。
+
+        返回 "minimize" 或 "exit"。
+        """
+        from PySide6.QtWidgets import QCheckBox, QDialog, QHBoxLayout, QPushButton, QVBoxLayout
+
+        from aao.ui.settings_page import load_settings, save_settings
+
+        s = load_settings()
+        saved = s.get("close_action", "")  # "minimize" / "exit" / "" (每次问)
+        if saved in ("minimize", "exit"):
+            return saved
+
+        # 首次/未设偏好：弹自定义对话框
+        self._hide_overlay()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("关闭窗口")
+        dl = QVBoxLayout(dlg)
+        btn_row = QHBoxLayout()
+        btn_exit = QPushButton("退出程序")
+        btn_minimize = QPushButton("最小化到托盘")
+        btn_row.addWidget(btn_exit)
+        btn_row.addWidget(btn_minimize)
+        dl.addLayout(btn_row)
+        chk = QCheckBox("不再询问（可在设置中修改）")
+        dl.addWidget(chk)
+
+        choice = "exit"
+
+        def _on_exit():
+            nonlocal choice
+            choice = "exit"
+            dlg.accept()
+
+        def _on_minimize():
+            nonlocal choice
+            choice = "minimize"
+            dlg.accept()
+
+        btn_exit.clicked.connect(_on_exit)
+        btn_minimize.clicked.connect(_on_minimize)
+        dlg.exec()
+        self._show_overlay()
+
+        if chk.isChecked():
+            s["close_action"] = choice
+            save_settings(s)
+        return choice
+
     def _restore_from_tray(self) -> None:
         """从托盘还原窗口。"""
         self.showNormal()
@@ -409,10 +459,15 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: D401
         if not self._force_quit:
-            # 普通关闭=隐藏到托盘（不退出，凹图可继续）
-            event.ignore()
-            self.hide()
-            self.tray.show_message("ArknightsAutoOperator", "已在后台运行，双击托盘图标恢复。")
+            # 点 X：按用户偏好退出或最小化
+            action = self._get_close_action()
+            if action == "minimize":
+                event.ignore()
+                self.hide()
+                self.tray.show_message("ArknightsAutoOperator", "已在后台运行，双击托盘图标恢复。")
+            else:
+                # 走真退出路径
+                self._force_quit = True
             return
         # 真退出（_quit_from_tray 已做清理，或窗口在可见时被强制关闭）
         self.hotkey_timer.stop()

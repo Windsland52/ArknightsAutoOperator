@@ -234,6 +234,14 @@ class SettingsPage(QWidget):
         rl.addLayout(btn_row)
         root.addWidget(res_box)
 
+        # --- 软件设置 ---
+        ui_box = QGroupBox("软件设置")
+        ui_form = QFormLayout(ui_box)
+        self.cb_close_action = QComboBox()
+        self.cb_close_action.addItems(["每次询问", "最小化到托盘", "退出程序"])
+        ui_form.addRow("关闭窗口时:", self.cb_close_action)
+        root.addWidget(ui_box)
+
         root.addStretch()
 
         # 日志
@@ -396,6 +404,8 @@ class SettingsPage(QWidget):
         if s.get("port"):
             self.edit_port.setText(str(s["port"]))
         self.chk_api.setChecked(s.get("api", True))
+        close_map = {"": 0, "minimize": 1, "exit": 2}
+        self.cb_close_action.setCurrentIndex(close_map.get(s.get("close_action", ""), 0))
         if s.get("proxy"):
             self.edit_proxy.setText(str(s["proxy"]))
         if s.get("github_token_enc"):
@@ -420,6 +430,7 @@ class SettingsPage(QWidget):
                 "port": port,
                 "api": self.chk_api.isChecked(),
                 "proxy": self.edit_proxy.text().strip(),
+                "close_action": ["", "minimize", "exit"][self.cb_close_action.currentIndex()],
             }
         )
         token = self.edit_github_token.text().strip()
