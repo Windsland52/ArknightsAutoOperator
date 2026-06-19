@@ -337,6 +337,7 @@ class MainWindow(QMainWindow):
         if self._controller is not None and self._tasker is not None:
             self.farm_page.set_runtime(self._controller, self._tasker)
         self.farm_page.busy_changed.connect(self._set_busy)
+        self.farm_page.reset_timer_requested.connect(self._reset_measure_timer)
 
         self.editor_page = EditorWindow()  # 打轴编辑器（已接入 canvas + 地图选点）
         self.editor_page.set_profile(self._profile_name)
@@ -418,6 +419,11 @@ class MainWindow(QMainWindow):
         self.bg_container.set_opacity(opacity)
 
     # --- 测量状态更新 ---
+
+    def _reset_measure_timer(self, node_name: str) -> None:
+        if self.worker is not None:
+            logger.debug("计时器重置（pipeline 节点: %s）", node_name)
+            self.worker.request_reset_timer()
 
     def _on_measure_state(self, state: dict) -> None:
         from aao.core.timing.time_source import format_timer

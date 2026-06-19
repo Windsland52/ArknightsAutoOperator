@@ -71,14 +71,17 @@ def get_outcome() -> Outcome:
     return _last_outcome
 
 
-def make_sink(on_outcome: Callable[[Outcome], None] | None = None):
+def make_sink(
+    on_outcome: Callable[[Outcome], None] | None = None,
+    on_node: Callable[[str], None] | None = None,
+):
     """创建 ContextEventSink，监听结算节点。返回 (sink, should_set_debug)。
 
     on_outcome：结算节点命中且 outcome 变化时调用（tasker 线程）。
-    on_node_next_list 在节点执行完进入 next 时触发，带 detail.name。
-    返回 should_debug=False：next_list 是控制流事件，默认对所有节点触发，
-    无需 set_debug_mode(True)（那会带来额外开销）。若实测某些节点不触发，
-    再改 True。
+    on_node：仅 Node.Recognition.Succeeded（Python: on_node_recognition +
+    NotificationType.Succeeded）时调用，用于精确事件（例如计时器 reset）。
+    不要挂在 Node.NextList 上，否则节点只是流转/尝试也会误触发。
+    返回 should_debug=False：不额外开启 debug mode，避免额外开销。
     """
     global _on_outcome_cb
     from maa.context import Context, ContextEventSink, NotificationType
@@ -107,6 +110,8 @@ def make_sink(on_outcome: Callable[[Outcome], None] | None = None):
             # recognition 命中才进 next，命中时 noti_type=Succeeded，记一次。
             try:
                 if noti_type == NotificationType.Succeeded:
+                    if on_node is not None:
+                        on_node(detail.name)
                     set_outcome(detail.name)
             except Exception:  # noqa: BLE001
                 pass

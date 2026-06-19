@@ -39,6 +39,7 @@ class MeasurementWorker(QObject):
         self.profile_name = profile_name
         self.interval_s = interval_s
         self._running = False
+        self._reset_requested = False
         self._latest: dict = {}
         self._lock = threading.Lock()
 
@@ -51,6 +52,9 @@ class MeasurementWorker(QObject):
         self._running = True
         logger.info("MeasurementWorker 启动 (profile=%s)", self.profile_name)
         while self._running:
+            if self._reset_requested:
+                self._reset_requested = False
+                self.time_source.reset_timer()
             try:
                 img = self.controller.post_screencap().wait().get()
                 self.time_source.update(img)
@@ -71,6 +75,9 @@ class MeasurementWorker(QObject):
             self.state_changed.emit(state)
             time.sleep(self.interval_s)
         logger.info("MeasurementWorker 停止")
+
+    def request_reset_timer(self) -> None:
+        self._reset_requested = True
 
     def stop(self) -> None:
         self._running = False

@@ -49,6 +49,7 @@ class FarmPage(QWidget):
 
     # 开始/结束凹图时通知 MainWindow 切换互斥状态
     busy_changed = Signal(bool)
+    reset_timer_requested = Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -284,6 +285,7 @@ class FarmPage(QWidget):
         self._thread.started.connect(self._worker.run)
         self._worker.round_finished.connect(self._on_round_finished)
         self._worker.round_outcome.connect(self._on_round_outcome)
+        self._worker.reset_timer_requested.connect(self.reset_timer_requested)
         self._worker.finished.connect(self._on_finished)
         self._worker.finished.connect(self._thread.quit)
         # 线程真正退出后再清理（避免 QThread 被 GC 时仍 running → 崩溃）

@@ -39,6 +39,7 @@ class FarmWorker(QObject):
     started_sig = Signal()  # 已开始凹图会话
     round_finished = Signal(object)  # RoundResult（ExecuteTimeline 末尾，outcome 可能"进行中"）
     round_outcome = Signal(int, str)  # (attempt_count, outcome_str) 结算节点命中后更新该轮
+    reset_timer_requested = Signal(str)  # pipeline 节点触发计时器清空（进入战斗/结算/放弃）
     finished = Signal(bool)  # real_success
     log = Signal(str)
 
@@ -82,10 +83,24 @@ class FarmWorker(QObject):
         # （该轮 outcome="进行中"），故 sink 命中时再发 round_outcome 更新 UI 那一行。
         from custom.outcome import make_sink
 
+        reset_nodes = {
+            "Farm@StartButton2",
+            "Farm@Abandon",
+            "Farm@AbandonConfirm",
+            "Farm@MissionFailed",
+            "Farm@Settlement",
+            "Farm@Stars3",
+            "Farm@StarsNo3",
+        }
+
         def _on_outcome(outcome: Outcome) -> None:
             self.round_outcome.emit(get_attempt_count(), outcome.value)
 
-        sink, should_debug = make_sink(on_outcome=_on_outcome)
+        def _on_node(node_name: str) -> None:
+            if node_name in reset_nodes:
+                self.reset_timer_requested.emit(node_name)
+
+        sink, should_debug = make_sink(on_outcome=_on_outcome, on_node=_on_node)
         self._tasker.add_context_sink(sink)
         if should_debug:
             self._tasker.set_debug_mode(True)
