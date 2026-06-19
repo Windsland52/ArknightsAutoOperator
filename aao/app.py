@@ -156,7 +156,9 @@ class MainWindow(QMainWindow):
 
         # 系统托盘：关闭窗口=隐藏到托盘；托盘「退出」=真退出
         from aao.ui.tray import TrayController
+        from aao.ui.window_snap import register_snap_window
 
+        register_snap_window(self, "main")
         self._force_quit = False
         self.tray = TrayController(self)
         self.tray.show_requested.connect(self._restore_from_tray)

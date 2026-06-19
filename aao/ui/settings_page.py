@@ -251,6 +251,12 @@ class SettingsPage(QWidget):
         self.cb_close_action.addItems(["每次询问", "最小化到托盘", "退出程序"])
         ui_form.addRow("关闭窗口时:", self.cb_close_action)
 
+        self.chk_float_log_auto = QCheckBox("开始凹图时自动显示悬浮日志")
+        self.chk_float_log_top = QCheckBox("悬浮日志默认置顶")
+        self.chk_float_log_top.setChecked(True)
+        ui_form.addRow(self.chk_float_log_auto)
+        ui_form.addRow(self.chk_float_log_top)
+
         # 高级参数（帧级执行/等待时间）
         self.spin_bullet = QSpinBox()
         self.spin_bullet.setRange(0, 30)
@@ -525,6 +531,8 @@ class SettingsPage(QWidget):
         self.chk_api.setChecked(s.get("api", True))
         close_map = {"": 0, "minimize": 1, "exit": 2}
         self.cb_close_action.setCurrentIndex(close_map.get(s.get("close_action", ""), 0))
+        self.chk_float_log_auto.setChecked(s.get("floating_log_auto_show", False))
+        self.chk_float_log_top.setChecked(s.get("floating_log_topmost", True))
         # 高级参数：读 settings，没存过用 config 默认值
         self.spin_bullet.setValue(s.get("bullet_threshold", config.BULLET_THRESHOLD))
         self.spin_speedup.setValue(s.get("speed_up_threshold", config.SPEED_UP_THRESHOLD))
@@ -556,6 +564,8 @@ class SettingsPage(QWidget):
                 "api": self.chk_api.isChecked(),
                 "proxy": self.edit_proxy.text().strip(),
                 "close_action": ["", "minimize", "exit"][self.cb_close_action.currentIndex()],
+                "floating_log_auto_show": self.chk_float_log_auto.isChecked(),
+                "floating_log_topmost": self.chk_float_log_top.isChecked(),
                 "bullet_threshold": self.spin_bullet.value(),
                 "speed_up_threshold": self.spin_speedup.value(),
                 "general_wait_ms": self.spin_general_wait.value(),

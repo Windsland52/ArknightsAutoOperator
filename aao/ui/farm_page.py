@@ -30,7 +30,9 @@ from PySide6.QtWidgets import (
 )
 
 from aao.core.timing.time_source import format_timer
+from aao.ui import floating_state
 from aao.ui.farm_worker import FarmWorker
+from aao.ui.floating_log_window import FloatingLogWindow
 from aao.ui.scrollbar_style import apply_themed_scrollbar
 from aao.utils.runtime_paths import project_root
 
@@ -53,8 +55,10 @@ class FarmPage(QWidget):
         self._tasker = None
         self._worker: FarmWorker | None = None
         self._thread: QThread | None = None
+        self._floating_log: FloatingLogWindow | None = None
         self._max_retries = 50
         self._build_ui()
+        self._restore_floating_log_state()
 
     # --- UI 构建 ---
 
@@ -94,9 +98,11 @@ class FarmPage(QWidget):
         btn_row = QHBoxLayout()
         self.btn_start = QPushButton("▶ 开始凹图")
         self.btn_stop = QPushButton("⏹ 停止")
+        self.btn_float_log = QPushButton("📋 悬浮日志")
         self.btn_stop.setEnabled(False)
         btn_row.addWidget(self.btn_start)
         btn_row.addWidget(self.btn_stop)
+        btn_row.addWidget(self.btn_float_log)
         btn_row.addStretch()
         form.addRow(btn_row)
 
@@ -142,6 +148,7 @@ class FarmPage(QWidget):
         # 信号
         self.btn_start.clicked.connect(self._on_start)
         self.btn_stop.clicked.connect(self._on_stop)
+        self.btn_float_log.clicked.connect(self._show_floating_log)
 
     def _load_timelines(self) -> None:
         cur = self.cb_timeline.currentText()
@@ -175,7 +182,46 @@ class FarmPage(QWidget):
 
     def set_log_handler(self, handler: QtLogHandler) -> None:
         """接 QtLogHandler 信号到日志面板（HTML，按日志等级着色）。"""
-        handler.log_html.connect(self.txt_log.append)
+        handler.log_html.connect(self._append_log)
+
+    def _append_log(self, html: str) -> None:
+        self.txt_log.append(html)
+        if self._floating_log is not None:
+            self._floating_log.append_log(html)
+
+    def _ensure_floating_log(self) -> FloatingLogWindow:
+        if self._floating_log is None:
+            # 顶层窗口不要设置 parent，否则主控台最小化时会把悬浮日志一起最小化。
+            self._floating_log = FloatingLogWindow()
+            self._floating_log.stop_requested.connect(self._on_stop)
+        self._floating_log.set_log_html(self.txt_log.toHtml())
+        self._sync_floating_status()
+        return self._floating_log
+
+    def _show_floating_log(self) -> None:
+        log_win = self._ensure_floating_log()
+        from aao.ui.settings_page import load_settings
+
+        log_win.set_always_on_top(load_settings().get("floating_log_topmost", True))
+        log_win.show()
+        log_win.raise_()
+        log_win.activateWindow()
+
+    def _restore_floating_log_state(self) -> None:
+        # 上次显示过，或保存了吸附跟随关系（例如吸附到游戏窗口/计时窗）时，启动自动恢复。
+        if floating_state.load_visible("farm_log", False) or floating_state.load_follow("farm_log"):
+            self._show_floating_log()
+
+    def _sync_floating_status(self) -> None:
+        if self._floating_log is None:
+            return
+        self._floating_log.set_status(
+            self.lbl_state.text(),
+            self.lbl_attempt.text(),
+            self.lbl_round.text(),
+            self.lbl_last.text(),
+        )
+        self._floating_log.set_running(self._worker is not None)
 
     # --- 控制 ---
 
@@ -203,6 +249,14 @@ class FarmPage(QWidget):
         self.list_history.clear()
         self._round_start_time = None
         self.busy_changed.emit(True)
+        from aao.ui.settings_page import load_settings
+
+        s = load_settings()
+        if s.get("floating_log_auto_show", False):
+            self._show_floating_log()
+        if self._floating_log is not None:
+            self._floating_log.set_always_on_top(s.get("floating_log_topmost", True))
+            self._sync_floating_status()
 
         self._worker = FarmWorker(
             self._controller,
@@ -226,6 +280,7 @@ class FarmPage(QWidget):
     def _on_stop(self) -> None:
         if self._worker is not None:
             self.lbl_state.setText("停止中…")
+            self._sync_floating_status()
             self._worker.stop()
 
     def stop_and_wait(self, timeout_ms: int = 10000) -> None:
@@ -244,10 +299,12 @@ class FarmPage(QWidget):
         self.lbl_round.setText(f"本轮: {timer}")
         self.lbl_last.setText(f"上轮: {outcome}")
         self.list_history.insertItem(0, f"#{n} {outcome}  ({timer})")
+        self._sync_floating_status()
 
     def _on_round_outcome(self, n: int, outcome: str) -> None:
         """结算节点命中后，更新第 n 轮那行（round_finished 时还是"进行中"）。"""
         self.lbl_last.setText(f"上轮: {outcome}")
+        self._sync_floating_status()
         prefix = f"#{n} "
         for i in range(self.list_history.count()):
             item = self.list_history.item(i)
@@ -266,6 +323,7 @@ class FarmPage(QWidget):
             self.lbl_state.setText("★ 三星成功！")
         else:
             self.lbl_state.setText("已停止/失败")
+        self._sync_floating_status()
         self.busy_changed.emit(False)
         # 注意：不在此处置空 _worker/_thread——_thread.quit() 只是请求退出，
         # 线程可能仍在跑。由 _cleanup_thread（thread.finished 信号）在真正退出后清理，
@@ -277,6 +335,7 @@ class FarmPage(QWidget):
             self._thread.wait()
         self._worker = None
         self._thread = None
+        self._sync_floating_status()
 
     def _set_inputs_enabled(self, enabled: bool) -> None:
         for w in (
