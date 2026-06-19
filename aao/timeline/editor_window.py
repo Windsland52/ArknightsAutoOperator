@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import json
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QFont, QPalette
 from PySide6.QtWidgets import (
     QComboBox,
     QCompleter,
@@ -65,6 +65,7 @@ class EditorWindow(QWidget):
         self.canvas.node_moved.connect(self._on_canvas_node_moved)
 
         self._build_ui()
+        self._style_frame_label()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -92,7 +93,6 @@ class EditorWindow(QWidget):
         f = QFont("Consolas", 14)
         f.setBold(True)
         self.lbl_frame.setFont(f)
-        self.lbl_frame.setStyleSheet("color: #00e5ff;")
 
         self.btn_help = QPushButton("❓ F8=部署 F9=技能 F10=撤退")
 
@@ -239,6 +239,17 @@ class EditorWindow(QWidget):
 
         # 初始化：默认自动变速 → 移除"变速"选项 + 隐藏速度选择
         self._on_speed_mode_changed(False)
+
+    def _style_frame_label(self) -> None:
+        """帧数显示用强调青色，按当前主题明暗选亮青/深青（浅底可读）。"""
+        is_dark = self.palette().color(QPalette.ColorRole.Window).lightness() < 128
+        self.lbl_frame.setStyleSheet(f"color: {'#00e5ff' if is_dark else '#00789a'};")
+
+    def changeEvent(self, event: QEvent) -> None:
+        # 主题切换 → palette 变 → 帧数标签换适配色
+        if event.type() == QEvent.Type.PaletteChange:
+            self._style_frame_label()
+        super().changeEvent(event)
 
     # --- 候选干员/装置管理 ---
 

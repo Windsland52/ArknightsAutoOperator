@@ -66,7 +66,6 @@ class AboutPage(QWidget):
         info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         info.setOpenExternalLinks(True)
         info.setWordWrap(True)
-        info.setStyleSheet("color: #9aa0a6;")
         root.addWidget(info)
 
         root.addStretch()

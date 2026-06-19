@@ -133,7 +133,6 @@ class MapPickerDialog(QDialog):
             self._grid = _MapGrid(map_data)
             layout.addWidget(self._grid)
             hint = QLabel("点击可部署格（绿=地面, 棕=高台）选中")
-            hint.setStyleSheet("color: #9aa0a6;")
             layout.addWidget(hint)
 
         btn_row = QHBoxLayout()

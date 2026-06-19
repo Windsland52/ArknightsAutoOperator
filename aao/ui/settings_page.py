@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from aao import __version__, config
 from aao.resources.syncer import sync_all
 from aao.resources.updater import UpdateChecker
+from aao.ui import theme
 from aao.utils.logger import logger
 from aao.utils.runtime_paths import project_root
 
@@ -179,7 +180,6 @@ class SettingsPage(QWidget):
         win_btn_row.addStretch()
         right.addLayout(win_btn_row)
         self.lbl_win_status = QLabel("未选择")
-        self.lbl_win_status.setStyleSheet("color: #9aa0a6;")
         right.addWidget(self.lbl_win_status)
         right.addStretch()
 
@@ -238,6 +238,10 @@ class SettingsPage(QWidget):
         # --- 软件设置 ---
         ui_box = QGroupBox("软件设置")
         ui_form = QFormLayout(ui_box)
+        self.cb_theme = QComboBox()
+        self.cb_theme.addItems([theme.label(m) for m in theme.MODES])
+        ui_form.addRow("主题:", self.cb_theme)
+
         self.cb_close_action = QComboBox()
         self.cb_close_action.addItems(["每次询问", "最小化到托盘", "退出程序"])
         ui_form.addRow("关闭窗口时:", self.cb_close_action)
@@ -280,11 +284,11 @@ class SettingsPage(QWidget):
 
         # 日志
         self.lbl_op = QLabel("")
-        self.lbl_op.setStyleSheet("color: #9aa0a6;")
         root.addWidget(self.lbl_op)
 
         # 信号
         self.btn_save.clicked.connect(self._on_save)
+        self.cb_theme.currentIndexChanged.connect(self._on_theme_changed)
         self.btn_sync.clicked.connect(lambda: self._run_resource("sync", False))
         self.btn_sync_remote.clicked.connect(lambda: self._run_resource("sync", True))
         self.btn_check.clicked.connect(lambda: self._run_resource("check_update", False))
@@ -431,8 +435,22 @@ class SettingsPage(QWidget):
             self.edit_github_token.setEchoMode(QLineEdit.EchoMode.Password)
             self.btn_token_eye.setText("👁")
 
+    def _on_theme_changed(self, idx: int) -> None:
+        """主题下拉切换：即时应用 + 持久化（纯 UI 偏好，无需重启或点保存按钮）。"""
+        mode = theme.MODES[idx]
+        theme.apply_theme(mode)
+        s = load_settings()
+        s["theme"] = mode
+        save_settings(s)
+        self.lbl_op.setText(f"主题已切换为：{theme.label(mode)}")
+
     def _load(self) -> None:
         s = load_settings()
+        # 主题：静默选中（启动时已由 app.py 应用，这里只同步下拉），切换时才即时生效
+        self.cb_theme.blockSignals(True)
+        mode = s.get("theme", theme.AUTO)
+        self.cb_theme.setCurrentIndex(theme.MODES.index(mode) if mode in theme.MODES else 0)
+        self.cb_theme.blockSignals(False)
         if s.get("profile"):
             self.cb_profile.setCurrentText(s["profile"])
         if s.get("port"):

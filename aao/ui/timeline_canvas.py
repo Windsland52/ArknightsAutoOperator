@@ -11,8 +11,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, Qt, Signal
-from PySide6.QtGui import QBrush, QColor, QFont, QMouseEvent, QPainter, QPen
+from PySide6.QtCore import QEvent, QPointF, Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QFont, QMouseEvent, QPainter, QPalette, QPen
 from PySide6.QtWidgets import (
     QGraphicsItem,
     QGraphicsRectItem,
@@ -58,7 +58,7 @@ class _NodeItem(QGraphicsRectItem):
         self._canvas = canvas
         self._drag_start_x: float | None = None
         self.setBrush(QBrush(_COLOR.get(action.action_type, QColor("#999"))))
-        self.setPen(QPen(QColor("#000"), 1))
+        self.setPen(QPen(self._canvas.palette().color(QPalette.ColorRole.WindowText), 1))
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
         self.setCursor(Qt.CursorShape.SizeHorCursor)
@@ -98,6 +98,7 @@ class TimelineCanvas(QGraphicsView):
 
     def __init__(self):
         super().__init__()
+        # view 背景跟随 palette（Base）——打轴页随全局主题，不固定深色
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -110,6 +111,21 @@ class TimelineCanvas(QGraphicsView):
         self._cursor: QGraphicsRectItem | None = None
         self._frame_scale: list[QGraphicsTextItem] = []
         self._max_frame = 1800  # 默认显示范围
+
+    # --- 主题感知配色 ---
+
+    def _is_dark(self) -> bool:
+        return self.palette().color(QPalette.ColorRole.Window).lightness() < 128
+
+    def _accent(self) -> QColor:
+        """帧刻度/节点高亮用：深色亮青、浅色深青（保证浅底可读）。"""
+        return QColor("#00e5ff") if self._is_dark() else QColor("#00789a")
+
+    def changeEvent(self, event: QEvent) -> None:
+        # 主题切换 → palette 变 → 重建场景（HUD 色按新 palette 重画）
+        if event.type() == QEvent.Type.PaletteChange:
+            self._rebuild()
+        super().changeEvent(event)
 
     # --- 数据 ---
 
@@ -133,6 +149,14 @@ class TimelineCanvas(QGraphicsView):
         if self._timeline is None:
             return
 
+        # 主题感知配色：中性色从 palette 派生，强调色（帧刻度/游标）按明暗二选一
+        pal = self.palette()
+        track_bg = pal.color(QPalette.ColorRole.AlternateBase)
+        track_border = pal.color(QPalette.ColorRole.Mid)
+        text = pal.color(QPalette.ColorRole.WindowText)
+        accent = self._accent()
+        cursor_c = QColor("#ffeb3b") if self._is_dark() else QColor("#f9a825")
+
         # 轨道背景 + 标签
         for at, idx in _TRACKS.items():
             y = _TOP + idx * _TRACK_H
@@ -141,30 +165,30 @@ class TimelineCanvas(QGraphicsView):
                 y,
                 _LEFT_PAD + self._max_frame * _PX_PER_FRAME,
                 _TRACK_H,
-                QPen(QColor("#333")),
-                QBrush(QColor("#1e1e1e")),
+                QPen(track_border),
+                QBrush(track_bg),
             )
             rect.setZValue(-2)
             lbl = self._scene.addText(at.value, QFont("Consolas", 9))
             lbl.setPos(4, y + 6)
-            lbl.setDefaultTextColor(QColor("#9aa0a6"))
+            lbl.setDefaultTextColor(text)
 
         # 刻度（frame + 秒双轴）
         step = 300  # 每 300 帧（10s）一刻度
         for f in range(0, self._max_frame + 1, step):
             x = _LEFT_PAD + f * _PX_PER_FRAME
-            self._scene.addLine(x, _TOP, x, _TOP + 3 * _TRACK_H, QPen(QColor("#444"), 1))
+            self._scene.addLine(x, _TOP, x, _TOP + 3 * _TRACK_H, QPen(track_border, 1))
             t = self._scene.addText(f"{f}", QFont("Consolas", 8))
             t.setPos(x - 8, _TOP - 14)
-            t.setDefaultTextColor(QColor("#00e5ff"))
+            t.setDefaultTextColor(accent)
             s = self._scene.addText(f"{f // config.FRAMES_PER_SECOND}s", QFont("Consolas", 8))
             s.setPos(x - 10, _TOP + 3 * _TRACK_H + 2)
-            s.setDefaultTextColor(QColor("#9aa0a6"))
+            s.setDefaultTextColor(text)
             self._frame_scale.append(t)
 
         # 游标
         self._cursor = QGraphicsRectItem(0, _TOP, 2, 3 * _TRACK_H)
-        self._cursor.setBrush(QBrush(QColor("#ffeb3b")))
+        self._cursor.setBrush(QBrush(cursor_c))
         self._cursor.setPen(QPen(Qt.PenStyle.NoPen))
         self._cursor.setZValue(5)
         self._scene.addItem(self._cursor)
@@ -191,12 +215,14 @@ class TimelineCanvas(QGraphicsView):
 
     def _magnet_hint(self, frame: int) -> None:
         threshold = config.FRAMES_PER_SECOND  # 1s 内吸附提示
+        edge = self.palette().color(QPalette.ColorRole.WindowText)
+        accent = self._accent()
         for node in self._nodes:
             af = node.action.time_value
             if abs(af - frame) < threshold:
-                node.setPen(QPen(QColor("#fff"), 2))
+                node.setPen(QPen(accent, 2))
             else:
-                node.setPen(QPen(QColor("#000"), 1))
+                node.setPen(QPen(edge, 1))
 
     # --- 鼠标点击节点选中 ---
 

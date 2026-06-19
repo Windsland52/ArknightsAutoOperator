@@ -86,13 +86,15 @@ class ToggleSwitch(QWidget):
         self._track.mousePressEvent = lambda _e: self._toggle()
 
     def _update_labels(self) -> None:
-        """选中侧高亮，非选中侧灰色。"""
-        if self._is_left:
-            self._left_label.setStyleSheet("color: #ffffff; font-weight: bold;")
-            self._right_label.setStyleSheet("color: #6b6b6b;")
-        else:
-            self._left_label.setStyleSheet("color: #6b6b6b;")
-            self._right_label.setStyleSheet("color: #ffffff; font-weight: bold;")
+        """选中侧高亮（enabled + 粗体），非选中侧弱化（disabled 灰，走 palette 自适应主题）。"""
+        self._left_label.setEnabled(self._is_left)
+        self._right_label.setEnabled(not self._is_left)
+        f_left = self._left_label.font()
+        f_right = self._right_label.font()
+        f_left.setBold(self._is_left)
+        f_right.setBold(not self._is_left)
+        self._left_label.setFont(f_left)
+        self._right_label.setFont(f_right)
 
     def is_left(self) -> bool:
         return self._is_left

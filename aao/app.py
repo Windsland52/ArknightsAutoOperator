@@ -595,6 +595,11 @@ def main() -> int:
 
     app = QApplication(sys.argv)
 
+    # 主题：读 settings.theme（缺省跟随系统），在窗口创建前应用
+    from aao.ui import theme
+
+    theme.apply_theme(saved.get("theme", theme.AUTO))
+
     # 校准加载：无校准则 data=None，MainWindow 会跳过 measure worker/悬浮窗，
     # 引导流程（首次→设置页→连接→校准）自然覆盖，不需要 pre-window 弹窗。
     calib_dir = calibration.calibration_dir()
