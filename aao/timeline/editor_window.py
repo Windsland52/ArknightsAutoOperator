@@ -261,7 +261,12 @@ class EditorWindow(QWidget):
         right_splitter.setStretchFactor(1, 0)
         right_splitter.setSizes([440, 120])
         right_splitter.setMaximumWidth(240)
-        middle.addWidget(right_splitter, 1)
+        self.side_panel = right_splitter
+        self.btn_side_toggle = QPushButton("◀")
+        self.btn_side_toggle.setFixedWidth(24)
+        self.btn_side_toggle.setToolTip("收起/展开候选与编辑栏")
+        middle.addWidget(self.side_panel, 1)
+        middle.addWidget(self.btn_side_toggle)
         layout.addLayout(middle, 1)
 
         # --- 底部状态 ---
@@ -275,6 +280,7 @@ class EditorWindow(QWidget):
         self.btn_delete.clicked.connect(self._on_delete)
         self.btn_pick.clicked.connect(self._on_pick_pos)
         self.btn_help.clicked.connect(self._show_shortcut_tip)
+        self.btn_side_toggle.clicked.connect(self._toggle_side_panel)
         self.cb_type.currentTextChanged.connect(self._on_type_changed)
         self.table.currentItemChanged.connect(self._on_select)
         self.btn_cand_add.clicked.connect(self._add_candidate)
@@ -284,6 +290,33 @@ class EditorWindow(QWidget):
 
         # 初始化：默认自动变速 → 移除"变速"选项 + 隐藏速度选择
         self._on_speed_mode_changed(False)
+        self._restore_side_panel_state()
+
+    def _toggle_side_panel(self) -> None:
+        self._set_side_panel_visible(not self.side_panel.isVisible(), save=True)
+
+    def _set_side_panel_visible(self, visible: bool, save: bool = False) -> None:
+        self.side_panel.setVisible(visible)
+        self.btn_side_toggle.setText("◀" if visible else "▶")
+        self.btn_side_toggle.setToolTip("收起候选与编辑栏" if visible else "展开候选与编辑栏")
+        if save:
+            from aao.ui.settings_page import load_settings, save_settings
+
+            s = load_settings()
+            states = s.get("collapsible_sections", {})
+            if not isinstance(states, dict):
+                states = {}
+            states["timeline_side_panel"] = visible
+            s["collapsible_sections"] = states
+            save_settings(s)
+
+    def _restore_side_panel_state(self) -> None:
+        from aao.ui.settings_page import load_settings
+
+        s = load_settings()
+        states = s.get("collapsible_sections", {})
+        if isinstance(states, dict) and "timeline_side_panel" in states:
+            self._set_side_panel_visible(bool(states["timeline_side_panel"]))
 
     def _style_frame_label(self) -> None:
         """帧数显示用强调青色，按当前主题明暗选亮青/深青（浅底可读）。"""

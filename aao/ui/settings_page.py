@@ -33,6 +33,7 @@ from aao import __version__, config
 from aao.resources.syncer import sync_all
 from aao.resources.updater import UpdateChecker
 from aao.ui import theme
+from aao.ui.collapsible_box import CollapsibleBox
 from aao.ui.scrollbar_style import apply_themed_scrollbar
 from aao.utils.logger import logger
 from aao.utils.runtime_paths import project_root
@@ -141,8 +142,29 @@ class SettingsPage(QWidget):
         self._worker: _ResourceWorker | None = None
         self._thread: QThread | None = None
         self._auto_preview_done = False
+        self._collapsibles: dict[str, CollapsibleBox] = {}
         self._build_ui()
         self._load()
+
+    def _add_collapsible(
+        self, root: QVBoxLayout, key: str, title: str, widget: QWidget, summary: str = ""
+    ) -> CollapsibleBox:
+        box = CollapsibleBox(title)
+        box.set_summary(summary)
+        box.add_widget(widget)
+        box.toggled.connect(lambda expanded, k=key: self._save_collapsible_state(k, expanded))
+        self._collapsibles[key] = box
+        root.addWidget(box)
+        return box
+
+    def _save_collapsible_state(self, key: str, expanded: bool) -> None:
+        s = load_settings()
+        states = s.get("collapsible_sections", {})
+        if not isinstance(states, dict):
+            states = {}
+        states[key] = expanded
+        s["collapsible_sections"] = states
+        save_settings(s)
 
     def showEvent(self, event: QShowEvent) -> None:  # noqa: D401
         # 切到设置页自动刷新窗口列表 + profile 下拉（新校准的立即可见）
@@ -189,7 +211,7 @@ class SettingsPage(QWidget):
         right.addStretch()
 
         win_layout.addLayout(right, 2)
-        root.addWidget(win_box)
+        self._add_collapsible(root, "settings_window", "游戏窗口", win_box, "选择/预览默认游戏窗口")
 
         # --- 运行设置 ---
         run_box = QGroupBox("运行设置")
@@ -238,7 +260,7 @@ class SettingsPage(QWidget):
             btn_row.addWidget(b)
         btn_row.addStretch()
         rl.addLayout(btn_row)
-        root.addWidget(res_box)
+        self._add_collapsible(root, "settings_resources", "资源", res_box, self._res_status_text())
 
         # --- 软件设置 ---
         ui_box = QGroupBox("软件设置")
@@ -289,7 +311,9 @@ class SettingsPage(QWidget):
         self.spin_min_wait.setValue(config.MINIMUM_WAIT_MS)
         ui_form.addRow("最小等待:", self.spin_min_wait)
 
-        root.addWidget(ui_box)
+        self._add_collapsible(
+            root, "settings_software", "软件设置", ui_box, "主题 / 悬浮日志 / 执行参数"
+        )
 
         # --- 背景图 ---
         bg_box = QGroupBox("背景图")
@@ -311,7 +335,7 @@ class SettingsPage(QWidget):
         bg_op_row.addWidget(self.slider_bg, 1)
         bg_op_row.addWidget(self.lbl_bg_val)
         bg_form.addRow("透明度:", bg_op_row)
-        root.addWidget(bg_box)
+        self._add_collapsible(root, "settings_background", "背景图", bg_box, "设置主控台背景图片")
 
         root.addStretch()
 
@@ -524,6 +548,11 @@ class SettingsPage(QWidget):
         self.slider_bg.setValue(int(s.get("background_opacity", 25)))
         self.slider_bg.blockSignals(False)
         self.lbl_bg_val.setText(f"{self.slider_bg.value()}%")
+        states = s.get("collapsible_sections", {})
+        if isinstance(states, dict):
+            for key, box in self._collapsibles.items():
+                if key in states:
+                    box.set_expanded(bool(states[key]))
         if s.get("profile"):
             self.cb_profile.setCurrentText(s["profile"])
         if s.get("port"):
