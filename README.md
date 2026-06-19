@@ -35,9 +35,25 @@
 ## 开发
 
 ```bash
+# 拉取仓库（包含 MaaCommonAssets 子模块，OCR 模型配置依赖它）
+git clone --recursive https://github.com/Windsland52/ArknightsAutoOperator.git
+cd ArknightsAutoOperator
+
+# 如果 clone 时没带 --recursive，可补拉子模块
+git submodule update --init --recursive
+
+# 安装依赖
 uv sync
-uv run python -m aao.app              # 启动主控台（可选 --profile xxx.json）
-uv run python -m aao.resources.syncer # 同步干员名 + 地图数据
+
+# 配置 OCR 模型：从 MaaCommonAssets/OCR/ppocr_v6 生成 resource/base/model/ocr
+# 当前使用混合档：det=small，rec/keys=tiny
+uv run python tools/configure.py
+
+# 启动主控台（可选 --profile xxx.json）
+uv run python -m aao.app
+
+# 可选：同步干员名 + 地图数据
+uv run python -m aao.resources.syncer
 ```
 
 前置：管理员终端（PostMessage 输入需 UIPI 权限）+ AFA（arknights-frame-assistant）常驻 + 游戏窗口前台。
