@@ -313,16 +313,22 @@ class ExecuteTimeline(CustomAction):
                 ctrl,
                 ts,
                 target_frame - bullet_threshold,
-                context_tasker_stopping=lambda: False,
+                context_tasker_stopping=lambda: context.tasker.stopping,
             )
             if self._leaked:
                 return  # 漏怪，跳过本动作的暂停/逐帧/操作
+            if context.tasker.stopping:
+                return
 
         # 到达 bullet 阈值 → 暂停（所有暂停都用模板验证）
-        self._pause(context, ctrl)
+        self._pause(context, ctrl, lambda: context.tasker.stopping)
+        if context.tasker.stopping:
+            return
 
         # 逐帧步进到目标
-        self._step_to_frames(ctrl, ts, target_frame)
+        self._step_to_frames(ctrl, ts, target_frame, lambda: context.tasker.stopping)
+        if context.tasker.stopping:
+            return
 
         # 执行动作（此时游戏已暂停）
         if action.action_type == ActionType.DEPLOY:
@@ -360,6 +366,7 @@ class ExecuteTimeline(CustomAction):
             if context_tasker_stopping():
                 return
             img = ctrl.post_screencap().wait().get()
+            now = time.time()
             lf = ts.update(img)
             if lf is not None:
                 current = ts.total_elapsed_frames
@@ -376,7 +383,6 @@ class ExecuteTimeline(CustomAction):
                 if current >= target_frame:
                     return
             # 漏怪检测：血量图标变红（BattleHpFlag2），低频（1s），不影响计时
-            now = time.time()
             if now - last_leak_check >= 1.0:
                 last_leak_check = now
                 if self._detect_leak(context, img):
@@ -395,21 +401,23 @@ class ExecuteTimeline(CustomAction):
 
     # --- 暂停状态机（经 AFA 热键 + 模板验证） ---
 
-    def _pause(self, context: Context, ctrl: Controller) -> None:
+    def _pause(
+        self,
+        context: Context,
+        ctrl: Controller,
+        context_tasker_stopping: Callable[[], bool],
+    ) -> None:
         """暂停游戏并验证：循环发 ESC 直到模板匹配到暂停标志。
 
         幂等：已暂停则不发。所有暂停都验证——pause invariant 是帧级执行的基础，
         一旦没真暂停后续逐帧/部署/技能全错。
         """
         if self._paused:
-            img = ctrl.post_screencap().wait().get()
-            reco = context.run_recognition("BattlePaused", img)
-            if reco and reco.hit:
-                return
-            logger.warning("内部暂停状态与游戏画面不一致，重新尝试暂停")
-            self._paused = False
+            return
         max_retries = 20
         for i in range(max_retries):
+            if context_tasker_stopping():
+                return
             afa_hotkey.tap_key(afa_hotkey.VK_F)
             self._paused = True
             time.sleep(config.GENERAL_WAIT_MS / 1000)
@@ -427,6 +435,7 @@ class ExecuteTimeline(CustomAction):
             return
         afa_hotkey.tap_key(afa_hotkey.VK_SPACE)  # AFA: 松开暂停（Space 脉冲）
         self._paused = False
+        logger.debug("恢复运行（Space）")
 
     # --- 倍速状态机（pipeline 节点识别速度按钮并点击） ---
 
@@ -444,13 +453,21 @@ class ExecuteTimeline(CustomAction):
         self._speed = speed
         logger.debug("倍速 → %dx", speed)
 
-    def _step_to_frames(self, ctrl: Controller, ts: TimeSource, target_frame: int) -> None:
+    def _step_to_frames(
+        self,
+        ctrl: Controller,
+        ts: TimeSource,
+        target_frame: int,
+        context_tasker_stopping: Callable[[], bool],
+    ) -> None:
         """逐帧步进到累计帧 target_frame（游戏须已暂停）。
 
         发 AFA R 键（Action33ms），AFA 要求光标在游戏客户区内。
         """
         max_steps = 90
         for _ in range(max_steps):
+            if context_tasker_stopping():
+                return
             img = ctrl.post_screencap().wait().get()
             lf = ts.update(img)
             if lf is None:
