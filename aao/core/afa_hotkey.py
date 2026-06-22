@@ -36,6 +36,7 @@ _is_windows = sys.platform == "win32"
 VK_F = 0x46
 VK_SPACE = 0x20
 VK_R = 0x52
+VK_T = 0x54
 VK_W = 0x57
 VK_S = 0x53  # 单位技能（ActionSkill → 发 E）
 VK_A = 0x41  # 单位撤退（ActionRetreat → 发 Q）
@@ -50,6 +51,7 @@ _INPUT_MOUSE = 2
 _KEYEVENTF_KEYUP = 0x0002
 _MOUSEEVENTF_XDOWN = 0x0080
 _MOUSEEVENTF_XUP = 0x0100
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
 
 class _MOUSEINPUT(ctypes.Structure):
@@ -110,10 +112,25 @@ if _is_windows:
     _user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
     _user32.SetForegroundWindow.argtypes = [wintypes.HWND]
     _user32.SetForegroundWindow.restype = wintypes.BOOL
+    _user32.GetForegroundWindow.restype = wintypes.HWND
+    _user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    _user32.GetWindowThreadProcessId.restype = wintypes.DWORD
     _user32.IsIconic.argtypes = [wintypes.HWND]
     _user32.IsIconic.restype = wintypes.BOOL
     _user32.ShowWindowAsync.argtypes = [wintypes.HWND, ctypes.c_int]
     _user32.ShowWindowAsync.restype = wintypes.BOOL
+    _kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined] # pyright: ignore[reportAttributeAccessIssue]
+    _kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    _kernel32.OpenProcess.restype = wintypes.HANDLE
+    _kernel32.QueryFullProcessImageNameW.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.LPWSTR,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    _kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+    _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    _kernel32.CloseHandle.restype = wintypes.BOOL
 
 
 def _send_keyboard(vk: int, up: bool) -> None:
@@ -146,6 +163,54 @@ def tap_mouse_xbutton(button: int) -> None:
         return
     _send_mouse_xbutton(button, up=False)
     _send_mouse_xbutton(button, up=True)
+
+
+def foreground_info() -> dict[str, object]:
+    """返回当前前台窗口信息（用于诊断 AFA HotIfWinActive 是否满足）。"""
+    if not _is_windows:
+        return {"hwnd": None, "title": "", "pid": None, "exe": ""}
+    hwnd = int(_user32.GetForegroundWindow())
+    title = _window_title(hwnd)
+    pid = wintypes.DWORD(0)
+    _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    exe = _process_image_path(pid.value) if pid.value else ""
+    return {"hwnd": hwnd, "title": title, "pid": int(pid.value), "exe": exe}
+
+
+def is_game_foreground(hwnd: int | None = None) -> bool:
+    """当前前台是否是 Arknights.exe（若给 hwnd，则还要求 hwnd 相同）。"""
+    if not _is_windows:
+        return False
+    fg = int(_user32.GetForegroundWindow())
+    if hwnd is not None and fg != hwnd:
+        return False
+    pid = wintypes.DWORD(0)
+    _user32.GetWindowThreadProcessId(fg, ctypes.byref(pid))
+    exe = _process_image_path(pid.value).lower() if pid.value else ""
+    return exe.endswith("arknights.exe")
+
+
+def _window_title(hwnd: int) -> str:
+    length = _user32.GetWindowTextLengthW(hwnd)
+    if length <= 0:
+        return ""
+    buf = ctypes.create_unicode_buffer(length + 1)
+    _user32.GetWindowTextW(hwnd, buf, length + 1)
+    return buf.value
+
+
+def _process_image_path(pid: int) -> str:
+    handle = _kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return ""
+    try:
+        size = wintypes.DWORD(1024)
+        buf = ctypes.create_unicode_buffer(size.value)
+        if _kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+            return buf.value
+        return ""
+    finally:
+        _kernel32.CloseHandle(handle)
 
 
 def find_game_window(title_substr: str = "明日方舟") -> int | None:

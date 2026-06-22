@@ -115,6 +115,9 @@
         "custom_action_param": "",
         "next": [
             "Farm@Settle"
+        ],
+        "on_error": [
+            "Farm@Abandon"
         ]
     },
     "Farm@Settle": {

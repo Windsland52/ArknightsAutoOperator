@@ -51,6 +51,13 @@ FRAME_THRESHOLD = 2  # frames before target → frame-by-frame
 MINIMUM_WAIT_MS = 20
 MOUSE_WAIT_MS = 100
 GENERAL_WAIT_MS = 300
+# AFA 热键时序：F/R 内部已有 50~80ms 动作，外部只需短等待，避免吃掉步进阈值。
+PAUSE_WAIT_MS = 100
+STEP_WAIT_MS = 140
+BIG_STEP_THRESHOLD = 8  # 剩余帧数 ≥ 此值时用 T（166ms），否则用 R（33ms）
+# 允许动作的帧窗口：提前/延后容忍（0=严格同帧，可分别配置）
+ACCEPT_EARLY_FRAMES = 0
+ACCEPT_LATE_FRAMES = 0
 
 # --- Game native keybindings (PC client, Arknights.exe) ---
 VK_SPACE = 0x20  # pause

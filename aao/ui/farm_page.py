@@ -217,7 +217,6 @@ class FarmPage(QWidget):
         log_win.set_always_on_top(load_settings().get("floating_log_topmost", True))
         log_win.show()
         log_win.raise_()
-        log_win.activateWindow()
 
     def _restore_floating_log_state(self) -> None:
         # 上次显示过，或保存了吸附跟随关系（例如吸附到游戏窗口/计时窗）时，启动自动恢复。

@@ -70,6 +70,7 @@ class ExecuteTimeline(CustomAction):
     _hwnd: int | None = None
     _speed: int = 1  # 当前游戏倍速（1 或 2），执行开始强制归 1
     _manual_speed: bool = False  # timeline 含变速动作时不走自动变速
+    _abort_reason: str | None = None
 
     # 单例回调：每轮 _execute 末尾触发（在 MAA tasker 线程）。
     # 调用方负责跨线程转 Qt 信号。None = 不回调。
@@ -140,6 +141,7 @@ class ExecuteTimeline(CustomAction):
         # AFA 需要游戏窗口前台 + 暂停状态机
         self._paused = False
         self._leaked = False
+        self._abort_reason = None
         self._speed = 1  # 假设进战斗默认 1 倍速（速度状态机起点）
         from custom.outcome import reset_outcome
 
@@ -173,12 +175,15 @@ class ExecuteTimeline(CustomAction):
             if self._leaked:
                 logger.warning("漏怪，中止剩余动作，放弃本局")
                 break
+            if self._abort_reason:
+                logger.warning("%s，中止剩余动作，放弃本局", self._abort_reason)
+                break
 
-        # 全部动作执行完（或漏怪中止），恢复游戏运行
+        # 全部动作执行完（或中止），恢复游戏运行
         self._resume()
 
-        # 最后一个动作执行完，开 2 倍速加速到结算（省时；漏怪中止则不必）
-        if not self._leaked:
+        # 最后一个动作执行完，开 2 倍速加速到结算（省时；中止则不必）
+        if not self._leaked and not self._abort_reason:
             self._set_speed(context, 2)
 
         # 回传本轮结果给 UI（若有回调）。在 tasker 线程触发。
@@ -195,6 +200,8 @@ class ExecuteTimeline(CustomAction):
                 # 中途漏怪优先于结算 outcome（执行器内检测更直接）
                 if self._leaked:
                     outcome_str = "漏怪"
+                elif self._abort_reason:
+                    outcome_str = self._abort_reason
                 elif outcome is Outcome.UNKNOWN:
                     # 结算节点在 ExecuteTimeline return 之后才命中，此刻尚未结算；
                     # UI 先标"进行中"，待 sink 命中结算节点后单独更新该行。
@@ -213,7 +220,7 @@ class ExecuteTimeline(CustomAction):
                 logger.exception("on_round_finished 回调失败")
 
         # 漏怪 = 本局失败（farm pipeline 会走放弃重试）
-        return CustomAction.RunResult(success=not self._leaked)
+        return CustomAction.RunResult(success=not self._leaked and not self._abort_reason)
 
     def _load_timeline_file(self, path: str) -> dict | None:
         """加载时间轴 JSON（纯文件名→config/timelines/，带路径→相对项目根）。"""
@@ -320,57 +327,25 @@ class ExecuteTimeline(CustomAction):
             if context.tasker.stopping:
                 return
 
-        # 到达 bullet 阈值 → 暂停。常规情况信任 AFA 的 F 热键；只有开局 0 帧动作做一次轻量验证。
-        verify_pause = target_frame == 0 and current <= bullet_threshold
-        self._pause(context, ctrl, lambda: context.tasker.stopping, verify=verify_pause)
+        # 到达 bullet 阈值 → 暂停（所有暂停都用模板验证）
+        if not self._pause(context, ctrl, lambda: context.tasker.stopping, ts=ts):
+            self._abort_reason = "pause failed"
+            return
         if context.tasker.stopping:
             return
 
-        # 逐帧步进到目标；没到目标就不能执行动作，否则会在错误帧/非预期状态操作。
-        if not self._step_to_frames(ctrl, ts, target_frame, lambda: context.tasker.stopping):
-            self._leaked = True
-            return
+        # 逐帧步进到目标
+        self._step_to_frames(ctrl, ts, target_frame, lambda: context.tasker.stopping)
         if context.tasker.stopping:
-            return
-        if not self._ready_to_act(ts, target_frame):
-            self._leaked = True
             return
 
         # 执行动作（此时游戏已暂停）
-        action_name = action.action_type.value if action.action_type is not None else "未知动作"
-        self._debug_frame(f"动作前 {action_name}", ctrl, ts)
         if action.action_type == ActionType.DEPLOY:
             self._deploy(context, ctrl, action)
         elif action.action_type == ActionType.SKILL:
             self._skill(ctrl, action)
         elif action.action_type == ActionType.RETREAT:
             self._retreat(ctrl, action)
-        self._debug_frame(f"动作后 {action_name}", ctrl, ts)
-
-    def _ready_to_act(self, ts: TimeSource, target_frame: int) -> bool:
-        """动作前最终保护：必须到达目标帧，且执行器状态仍认为处于暂停。"""
-        if ts.total_elapsed_frames < target_frame:
-            logger.warning(
-                "动作前保护：未到目标帧（当前=%d，目标=%d），跳过动作",
-                ts.total_elapsed_frames,
-                target_frame,
-            )
-            return False
-        if not self._paused:
-            logger.warning("动作前保护：内部状态不是暂停，跳过动作")
-            return False
-        return True
-
-    def _debug_frame(self, label: str, ctrl: Controller, ts: TimeSource) -> int | None:
-        frame = self._read_frames(ctrl, ts)
-        logger.debug(
-            "%s: total=%s current=%s paused=%s",
-            label,
-            frame,
-            ts.current_frame_in_cycle,
-            self._paused,
-        )
-        return frame
 
     def _read_frames(self, ctrl: Controller, ts: TimeSource) -> int | None:
         """截图 → TimeSource → 累计帧。"""
@@ -433,42 +408,88 @@ class ExecuteTimeline(CustomAction):
         )
         return bool(reco and reco.hit)
 
-    # --- 暂停状态机（经 AFA 热键） ---
+    # --- 暂停状态机（经 AFA 热键 + 模板验证） ---
 
     def _pause(
         self,
         context: Context,
         ctrl: Controller,
         context_tasker_stopping: Callable[[], bool],
-        verify: bool = False,
-    ) -> None:
-        """暂停游戏。
+        ts: TimeSource | None = None,
+    ) -> bool:
+        """暂停游戏: BattlePaused 确认 + R 步进验证.
 
-        常规动作只发一次 AFA 的 F（ActionPressPause），不再用 BattlePaused 模板反复重试；
-        该模板在子弹时间/周期末附近容易误判，重试反而可能破坏 AFA 状态。
-        verify=True 仅用于开局 0 帧动作：发 F 后做一次模板确认并记录日志，不重试。
+        最多 2 次 F. 失败返回 False, 调用方中止本轮.
+        ts 非空时, 每次模板命中后发一次测试 R 验证暂停是否真实.
         """
-        if self._paused or context_tasker_stopping():
-            return
-        logger.debug("AFA: F 暂停")
-        afa_hotkey.tap_key(afa_hotkey.VK_F)
-        self._paused = True
-        logger.debug("暂停（F）")
-        if not verify:
-            return
-        time.sleep(config.GENERAL_WAIT_MS / 1000)
-        img = ctrl.post_screencap().wait().get()
-        reco = context.run_recognition("BattlePaused", img)
-        if reco and reco.hit:
-            logger.debug("开局暂停验证成功（模板命中）")
-        else:
-            logger.warning("开局暂停验证未命中；继续信任 AFA 暂停状态")
+        if self._paused:
+            return True
+        if context_tasker_stopping():
+            return False
+        for attempt in range(2):
+            img = ctrl.post_screencap().wait().get()
+            reco = context.run_recognition("BattlePaused", img)
+            if reco and reco.hit:
+                self._paused = True
+                logger.debug("暂停预检成功: 画面已是暂停态, attempt=%d", attempt + 1)
+                return self._verify_pause_r(ctrl, ts, attempt)
+            self._tap_afa(afa_hotkey.VK_F, "F 暂停")
+            self._paused = True
+            logger.debug("暂停(F), 等待 %dms, attempt=%d", config.PAUSE_WAIT_MS, attempt + 1)
+            time.sleep(config.PAUSE_WAIT_MS / 1000)
+            img = ctrl.post_screencap().wait().get()
+            reco = context.run_recognition("BattlePaused", img)
+            if reco and reco.hit:
+                logger.debug("暂停确认成功(模板命中), attempt=%d", attempt + 1)
+                return self._verify_pause_r(ctrl, ts, attempt)
+            self._paused = False
+            logger.warning("暂停确认失败(模板未命中), attempt=%d", attempt + 1)
+            if context_tasker_stopping():
+                return False
+        logger.error("暂停确认失败: 中止本轮, 避免未暂停动作")
+        return False
+
+    def _verify_pause_r(
+        self, ctrl: Controller, ts: TimeSource | None, attempt: int
+    ) -> bool:
+        """BattlePaused 确认后, 用一次 R 验证暂停是否真实."""
+        if ts is None:
+            return True
+        before = self._read_frames(ctrl, ts)
+        if before is None:
+            return True
+        if self._hwnd is not None:
+            afa_hotkey.move_cursor(self._hwnd, 0.5, 0.5)
+        self._tap_afa(afa_hotkey.VK_R, "R 暂停验证")
+        time.sleep(config.STEP_WAIT_MS / 1000)
+        after = self._read_frames(ctrl, ts)
+        if after is None:
+            return True
+        delta = after - before
+        logger.debug("暂停 R 验证: before=%d after=%d delta=%d", before, after, delta)
+        if delta <= 2:
+            return True
+        logger.warning("暂停图标命中但 R 推进 %d 帧, attempt=%d, 疑似未真暂停", delta, attempt + 1)
+        self._paused = False
+        return False
+
+    def _tap_afa(self, vk: int, label: str) -> None:
+        info = afa_hotkey.foreground_info()
+        logger.debug(
+            "AFA: %s | foreground hwnd=%s title=%r pid=%s exe=%r game=%s",
+            label,
+            info.get("hwnd"),
+            info.get("title"),
+            info.get("pid"),
+            info.get("exe"),
+            afa_hotkey.is_game_foreground(self._hwnd),
+        )
+        afa_hotkey.tap_key(vk)
 
     def _resume(self) -> None:
         """恢复游戏运行。幂等：已运行则不发。"""
         if not self._paused:
             return
-        logger.debug("AFA: Space 恢复")
         afa_hotkey.tap_key(afa_hotkey.VK_SPACE)  # AFA: 松开暂停（Space 脉冲）
         self._paused = False
         logger.debug("恢复运行（Space）")
@@ -495,7 +516,7 @@ class ExecuteTimeline(CustomAction):
         ts: TimeSource,
         target_frame: int,
         context_tasker_stopping: Callable[[], bool],
-    ) -> bool:
+    ) -> None:
         """逐帧步进到累计帧 target_frame（游戏须已暂停）。
 
         发 AFA R 键（Action33ms），AFA 要求光标在游戏客户区内。
@@ -503,32 +524,26 @@ class ExecuteTimeline(CustomAction):
         max_steps = 90
         for _ in range(max_steps):
             if context_tasker_stopping():
-                return False
+                return
             img = ctrl.post_screencap().wait().get()
             lf = ts.update(img)
             if lf is None:
-                logger.warning("逐帧步进中费用条不可读（目标帧 %d）", target_frame)
-                return False
+                break
             if ts.total_elapsed_frames >= target_frame:
-                logger.debug("到达目标帧 %d（当前=%d）", target_frame, ts.total_elapsed_frames)
-                return True
-            logger.debug("逐帧：当前=%d 目标=%d，发送 R", ts.total_elapsed_frames, target_frame)
+                logger.debug("到达目标帧 %d", target_frame)
+                return
             self._step_one_frame()
             time.sleep(config.GENERAL_WAIT_MS / 1000)
-        logger.warning("逐帧步进超时（目标帧 %d，当前=%d）", target_frame, ts.total_elapsed_frames)
-        return False
+        logger.warning("逐帧步进超时（目标帧 %d）", target_frame)
 
     def _step_one_frame(self) -> None:
         """推进 1 帧（游戏须已暂停）。发 AFA R 键。"""
         self._ensure_cursor_in_game()
-        logger.debug("AFA: R 步进")
         afa_hotkey.tap_key(afa_hotkey.VK_R)  # AFA: 前进 33ms
-        self._paused = True
 
     def _ensure_cursor_in_game(self) -> None:
         """把真实光标移到游戏客户区中心（满足 AFA IsMouseInClient）。"""
         if self._hwnd is not None:
-            logger.debug("AFA: move cursor center")
             afa_hotkey.move_cursor(self._hwnd, 0.5, 0.5)
 
     def _move_cursor_to_unit(self, action: Action) -> None:
@@ -536,12 +551,6 @@ class ExecuteTimeline(CustomAction):
         if self._hwnd is None or action.view_pos_front is None:
             self._ensure_cursor_in_game()
             return
-        logger.debug(
-            "AFA: move cursor unit %s front=(%.3f,%.3f)",
-            action.oper,
-            action.view_pos_front[0],
-            action.view_pos_front[1],
-        )
         afa_hotkey.move_cursor(self._hwnd, action.view_pos_front[0], action.view_pos_front[1])
 
     def _deploy(self, context: Context, ctrl: Controller, action: Action) -> None:
@@ -567,13 +576,10 @@ class ExecuteTimeline(CustomAction):
         deploy_y = int(action.view_pos_side[1] * 720 + int(config.DEPLOY_DELTA_RATIO * 720))
 
         # 左键拖拽（PostMessage）
-        logger.debug("MAA: touch_down avatar=(%d,%d)", avatar_x, avatar_y)
         ctrl.post_touch_down(avatar_x, avatar_y, 0, 1).wait()
         time.sleep(0.05)
-        logger.debug("MAA: touch_move deploy=(%d,%d)", deploy_x, deploy_y)
         ctrl.post_touch_move(deploy_x, deploy_y, 0, 1).wait()
         time.sleep(0.05)
-        logger.debug("MAA: touch_up deploy")
         ctrl.post_touch_up(0).wait()
 
         time.sleep(config.GENERAL_WAIT_MS / 1000)
@@ -606,7 +612,6 @@ class ExecuteTimeline(CustomAction):
         x2 = int(max(0, min(1, x + dx)) * 1280)
         y2 = int(max(0, min(1, y + dy)) * 720)
 
-        logger.debug("MAA: direction drag (%d,%d) -> (%d,%d)", x1, y1, x2, y2)
         ctrl.post_touch_down(x1, y1, 0, 1).wait()
         time.sleep(0.05)
         ctrl.post_touch_move(x2, y2, 0, 1).wait()
@@ -618,10 +623,8 @@ class ExecuteTimeline(CustomAction):
         """技能（游戏须已暂停）。光标移到单位 → W 暂停选中 → S 发 E。"""
         logger.info("技能 %s", action.oper)
         self._move_cursor_to_unit(action)
-        logger.debug("AFA: W 暂停选中")
         afa_hotkey.tap_key(afa_hotkey.VK_W)  # 暂停选中
         time.sleep(config.GENERAL_WAIT_MS / 1000)
-        logger.debug("AFA: S 技能")
         afa_hotkey.tap_key(afa_hotkey.VK_S)  # 单位技能（发 E）
         time.sleep(config.GENERAL_WAIT_MS / 1000)
 
@@ -629,9 +632,7 @@ class ExecuteTimeline(CustomAction):
         """撤退（游戏须已暂停）。光标移到单位 → W 暂停选中 → A 发 Q。"""
         logger.info("撤退 %s", action.oper)
         self._move_cursor_to_unit(action)
-        logger.debug("AFA: W 暂停选中")
         afa_hotkey.tap_key(afa_hotkey.VK_W)  # 暂停选中
         time.sleep(config.GENERAL_WAIT_MS / 1000)
-        logger.debug("AFA: A 撤退")
         afa_hotkey.tap_key(afa_hotkey.VK_A)  # 单位撤退（发 Q）
         time.sleep(config.GENERAL_WAIT_MS / 1000)

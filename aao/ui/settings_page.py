@@ -311,6 +311,41 @@ class SettingsPage(QWidget):
         self.spin_min_wait.setValue(config.MINIMUM_WAIT_MS)
         ui_form.addRow("最小等待:", self.spin_min_wait)
 
+        self.spin_pause_wait = QSpinBox()
+        self.spin_pause_wait.setRange(20, 500)
+        self.spin_pause_wait.setSingleStep(10)
+        self.spin_pause_wait.setSuffix(" ms")
+        self.spin_pause_wait.setValue(config.PAUSE_WAIT_MS)
+        ui_form.addRow("暂停等待:", self.spin_pause_wait)
+
+        self.spin_step_wait = QSpinBox()
+        self.spin_step_wait.setRange(20, 500)
+        self.spin_step_wait.setSingleStep(10)
+        self.spin_step_wait.setSuffix(" ms")
+        self.spin_step_wait.setValue(config.STEP_WAIT_MS)
+        ui_form.addRow("步进等待:", self.spin_step_wait)
+
+        self.spin_big_step = QSpinBox()
+        self.spin_big_step.setRange(4, 30)
+        self.spin_big_step.setSuffix(" 帧")
+        self.spin_big_step.setToolTip("剩余帧数≥此值时用 T（快），否则用 R（慢）")
+        self.spin_big_step.setValue(config.BIG_STEP_THRESHOLD)
+        ui_form.addRow("T 步进阈值:", self.spin_big_step)
+
+        self.spin_accept_early = QSpinBox()
+        self.spin_accept_early.setRange(0, 3)
+        self.spin_accept_early.setSuffix(" 帧")
+        self.spin_accept_early.setToolTip("允许动作提前触发的帧数（0=严格同帧）")
+        self.spin_accept_early.setValue(config.ACCEPT_EARLY_FRAMES)
+        ui_form.addRow("提前容忍:", self.spin_accept_early)
+
+        self.spin_accept_late = QSpinBox()
+        self.spin_accept_late.setRange(0, 5)
+        self.spin_accept_late.setSuffix(" 帧")
+        self.spin_accept_late.setToolTip("动作晚于目标多少帧仍可接受")
+        self.spin_accept_late.setValue(config.ACCEPT_LATE_FRAMES)
+        ui_form.addRow("延后容忍:", self.spin_accept_late)
+
         self._add_collapsible(
             root, "settings_software", "软件设置", ui_box, "主题 / 悬浮日志 / 执行参数"
         )
@@ -568,6 +603,11 @@ class SettingsPage(QWidget):
         self.spin_general_wait.setValue(s.get("general_wait_ms", config.GENERAL_WAIT_MS))
         self.spin_mouse_wait.setValue(s.get("mouse_wait_ms", config.MOUSE_WAIT_MS))
         self.spin_min_wait.setValue(s.get("minimum_wait_ms", config.MINIMUM_WAIT_MS))
+        self.spin_pause_wait.setValue(s.get("pause_wait_ms", config.PAUSE_WAIT_MS))
+        self.spin_step_wait.setValue(s.get("step_wait_ms", config.STEP_WAIT_MS))
+        self.spin_big_step.setValue(s.get("big_step_threshold", config.BIG_STEP_THRESHOLD))
+        self.spin_accept_early.setValue(s.get("accept_early_frames", config.ACCEPT_EARLY_FRAMES))
+        self.spin_accept_late.setValue(s.get("accept_late_frames", config.ACCEPT_LATE_FRAMES))
         if s.get("proxy"):
             self.edit_proxy.setText(str(s["proxy"]))
         if s.get("github_token_enc"):
@@ -600,6 +640,11 @@ class SettingsPage(QWidget):
                 "general_wait_ms": self.spin_general_wait.value(),
                 "mouse_wait_ms": self.spin_mouse_wait.value(),
                 "minimum_wait_ms": self.spin_min_wait.value(),
+                "pause_wait_ms": self.spin_pause_wait.value(),
+                "step_wait_ms": self.spin_step_wait.value(),
+                "accept_early_frames": self.spin_accept_early.value(),
+                "accept_late_frames": self.spin_accept_late.value(),
+                "big_step_threshold": self.spin_big_step.value(),
             }
         )
         # 即时覆盖 config（下次凹图立即生效）
@@ -608,6 +653,11 @@ class SettingsPage(QWidget):
         config.GENERAL_WAIT_MS = self.spin_general_wait.value()
         config.MOUSE_WAIT_MS = self.spin_mouse_wait.value()
         config.MINIMUM_WAIT_MS = self.spin_min_wait.value()
+        config.PAUSE_WAIT_MS = self.spin_pause_wait.value()
+        config.STEP_WAIT_MS = self.spin_step_wait.value()
+        config.ACCEPT_EARLY_FRAMES = self.spin_accept_early.value()
+        config.ACCEPT_LATE_FRAMES = self.spin_accept_late.value()
+        config.BIG_STEP_THRESHOLD = self.spin_big_step.value()
         token = self.edit_github_token.text().strip()
         if token:
             try:

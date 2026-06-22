@@ -667,6 +667,16 @@ def main() -> int:
         config.MOUSE_WAIT_MS = s["mouse_wait_ms"]
     if "minimum_wait_ms" in s:
         config.MINIMUM_WAIT_MS = s["minimum_wait_ms"]
+    if "pause_wait_ms" in s:
+        config.PAUSE_WAIT_MS = s["pause_wait_ms"]
+    if "step_wait_ms" in s:
+        config.STEP_WAIT_MS = s["step_wait_ms"]
+    if "accept_early_frames" in s:
+        config.ACCEPT_EARLY_FRAMES = s["accept_early_frames"]
+    if "accept_late_frames" in s:
+        config.ACCEPT_LATE_FRAMES = s["accept_late_frames"]
+    if "big_step_threshold" in s:
+        config.BIG_STEP_THRESHOLD = s["big_step_threshold"]
 
     from maa.toolkit import Toolkit
 

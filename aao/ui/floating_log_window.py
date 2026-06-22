@@ -50,6 +50,7 @@ class FloatingLogWindow(QWidget):
         self.setWindowFlag(Qt.WindowType.Window, True)
         self.setWindowFlag(Qt.WindowType.Tool, True)
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        self.setWindowFlag(Qt.WindowType.WindowDoesNotAcceptFocus, True)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setWindowOpacity(0.82)  # 与费用/计时悬浮窗保持一致
         self.resize(360, 220)
