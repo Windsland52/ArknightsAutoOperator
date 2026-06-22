@@ -327,10 +327,17 @@ class ExecuteTimeline(CustomAction):
             if context.tasker.stopping:
                 return
 
-        # 到达 bullet 阈值 → 暂停（所有暂停都用模板验证）
-        if not self._pause(context, ctrl, lambda: context.tasker.stopping, ts=ts):
-            self._abort_reason = "pause failed"
-            return
+        # 到达 bullet 阈值 → 暂停
+        # 0 帧动作（开局部署）：等 BattleOfficiallyBegin → 狂按 F → 等 Play.png
+        # 非 0 帧动作：常规暂停确认 + R 验证
+        if target_frame == 0 and current <= bullet_threshold:
+            if not self._pause_at_battle_start(context, ctrl, lambda: context.tasker.stopping):
+                self._abort_reason = "pause failed"
+                return
+        else:
+            if not self._pause(context, ctrl, lambda: context.tasker.stopping, ts=ts, target_frame=target_frame):
+                self._abort_reason = "pause failed"
+                return
         if context.tasker.stopping:
             return
 
@@ -410,17 +417,62 @@ class ExecuteTimeline(CustomAction):
 
     # --- 暂停状态机（经 AFA 热键 + 模板验证） ---
 
+    def _pause_at_battle_start(
+        self,
+        context: Context,
+        ctrl: Controller,
+        context_tasker_stopping: Callable[[], bool],
+    ) -> bool:
+        """开局 0 帧暂停: 等 BattleOfficiallyBegin → 狂按 F → 等 Play.png.
+
+        不发 R 验证, 避免 0 帧被推进.
+        """
+        # 1. 等 BattleOfficiallyBegin 出现 (战斗加载完成, 可操作)
+        logger.debug("开局暂停: 等待战斗加载完成")
+        for _ in range(50):
+            if context_tasker_stopping():
+                return False
+            time.sleep(0.2)
+            img = ctrl.post_screencap().wait().get()
+            reco = context.run_recognition("Farm@BattleOn", img)
+            if reco and reco.hit:
+                logger.debug("开局暂停: 战斗已加载")
+                break
+        else:
+            logger.error("开局暂停: 等待战斗加载超时")
+            return False
+
+        # 2. 狂按 F 直到 Play.png 出现
+        for i in range(50):
+            if context_tasker_stopping():
+                return False
+            self._tap_afa(afa_hotkey.VK_F, "F 开局暂停")
+            self._paused = True
+            time.sleep(0.03)
+            img = ctrl.post_screencap().wait().get()
+            reco = context.run_recognition("BattlePaused", img)
+            if reco and reco.hit:
+                logger.debug("开局暂停成功 (Play.png 命中), attempt=%d", i + 1)
+                return True
+            logger.debug("开局暂停: Play.png 未命中, attempt=%d", i + 1)
+
+        logger.error("开局暂停: 按 F 50 次仍未暂停")
+        self._paused = False
+        return False
+
     def _pause(
         self,
         context: Context,
         ctrl: Controller,
         context_tasker_stopping: Callable[[], bool],
         ts: TimeSource | None = None,
+        target_frame: int | None = None,
     ) -> bool:
         """暂停游戏: BattlePaused 确认 + R 步进验证.
 
         最多 2 次 F. 失败返回 False, 调用方中止本轮.
         ts 非空时, 每次模板命中后发一次测试 R 验证暂停是否真实.
+        非 0 帧动作进入时战斗已加载, 不需要等 BattleOfficiallyBegin.
         """
         if self._paused:
             return True
@@ -442,16 +494,23 @@ class ExecuteTimeline(CustomAction):
             if reco and reco.hit:
                 logger.debug("暂停确认成功(模板命中), attempt=%d", attempt + 1)
                 return self._verify_pause_r(ctrl, ts, attempt)
+            # 模板未命中且离目标较远时, 用 R 验证兜底
+            # (R 会推进 1 帧, 离目标太近时不值得冒险)
+            if ts is not None:
+                remaining = target_frame - ts.total_elapsed_frames if target_frame is not None else 999
+                if remaining > 3:
+                    logger.debug("模板未命中, 尝试 R 验证兜底, attempt=%d", attempt + 1)
+                    if self._verify_pause_r(ctrl, ts, attempt):
+                        logger.debug("R 验证兜底成功, attempt=%d", attempt + 1)
+                        return True
             self._paused = False
-            logger.warning("暂停确认失败(模板未命中), attempt=%d", attempt + 1)
+            logger.warning("暂停确认失败(模板+R 均未通过), attempt=%d", attempt + 1)
             if context_tasker_stopping():
                 return False
         logger.error("暂停确认失败: 中止本轮, 避免未暂停动作")
         return False
 
-    def _verify_pause_r(
-        self, ctrl: Controller, ts: TimeSource | None, attempt: int
-    ) -> bool:
+    def _verify_pause_r(self, ctrl: Controller, ts: TimeSource | None, attempt: int) -> bool:
         """BattlePaused 确认后, 用一次 R 验证暂停是否真实."""
         if ts is None:
             return True
