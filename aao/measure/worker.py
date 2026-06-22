@@ -20,6 +20,12 @@ from aao.utils.logger import logger
 if TYPE_CHECKING:
     from maa.controller import Win32Controller
 
+# 退避参数：前 _FAST_RETRY_THRESHOLD 次快速重试（检测瞬断），
+# 之后按 _BACKOFF_S 间隔重试（游戏可能已退出/最小化，无需高频截图）。
+_FAST_RETRY_THRESHOLD = 3
+_BACKOFF_S = 5.0  # 连续失败退避间隔（用户要求 5-10s）
+_PERIODIC_LOG_EVERY = 60  # 持续退避中每 N 次失败输出一条进度日志（≈5min 一条）
+
 
 class MeasurementWorker(QObject):
     """采集循环 worker（moveToThread 到 QThread 运行）。"""
@@ -57,20 +63,38 @@ class MeasurementWorker(QObject):
                 self._reset_requested = False
                 self.time_source.reset_timer()
             try:
-                img = self.controller.post_screencap().wait().get()
+                # 拆开链式调用: wait() 只阻塞不检查状态，需显式判 job.failed。
+                # 否则 C++ 层 screencap failed 时 cached_image 仍返回空/旧图、不抛异常，
+                # 导致 except 永远不触发、退避不生效（见 maafw.log 连续刷屏问题）。
+                job = self.controller.post_screencap()
+                job.wait()
+                if job.failed:
+                    raise RuntimeError("screencap job failed")
+                img = job.get()
+                # 防御: MaaFW 有时返回 (0,0,3) 空数组而非抛异常
+                if img is None or img.size == 0:  # pyright: ignore[reportUnnecessaryComparison]
+                    raise RuntimeError("screencap returned empty image")
                 self.time_source.update(img)
                 self._consecutive_errors = 0
             except Exception:
                 self._consecutive_errors += 1
-                if self._consecutive_errors <= 3:
-                    logger.warning("截图失败 %d 次", self._consecutive_errors)
-                elif self._consecutive_errors == 4:
+                n = self._consecutive_errors
+                if n <= _FAST_RETRY_THRESHOLD:
+                    logger.warning("截图失败 %d 次", n)
+                elif n == _FAST_RETRY_THRESHOLD + 1:
                     logger.error(
-                        "截图连续失败 %d 次, 游戏可能已退出或最小化, 降低重试频率",
-                        self._consecutive_errors,
+                        "截图连续失败 %d 次, 游戏可能已退出或最小化, 降低重试频率至 %.0fs",
+                        n,
+                        _BACKOFF_S,
                     )
-                # 退避: 前 3 次快重试, 之后 5s 一次
-                backoff = self.interval_s if self._consecutive_errors <= 3 else 5.0
+                elif n % _PERIODIC_LOG_EVERY == 0:
+                    logger.warning(
+                        "截图仍连续失败 (%d 次), 每 %.0fs 重试一次",
+                        n,
+                        _BACKOFF_S,
+                    )
+                # 退避: 前 N 次快重试, 之后 _BACKOFF_S 一次
+                backoff = self.interval_s if n <= _FAST_RETRY_THRESHOLD else _BACKOFF_S
                 time.sleep(backoff)
                 continue
 

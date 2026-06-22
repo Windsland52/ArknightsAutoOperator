@@ -54,3 +54,8 @@ Thumbs.db
 *.swp
 *~
 *.code-workspace
+
+# Agent
+.omo/
+.claude/
+.codex/
