@@ -335,7 +335,9 @@ class ExecuteTimeline(CustomAction):
                 self._abort_reason = "pause failed"
                 return
         else:
-            if not self._pause(context, ctrl, lambda: context.tasker.stopping, ts=ts, target_frame=target_frame):
+            if not self._pause(
+                context, ctrl, lambda: context.tasker.stopping, ts=ts, target_frame=target_frame
+            ):
                 self._abort_reason = "pause failed"
                 return
         if context.tasker.stopping:
@@ -497,7 +499,9 @@ class ExecuteTimeline(CustomAction):
             # 模板未命中且离目标较远时, 用 R 验证兜底
             # (R 会推进 1 帧, 离目标太近时不值得冒险)
             if ts is not None:
-                remaining = target_frame - ts.total_elapsed_frames if target_frame is not None else 999
+                remaining = (
+                    target_frame - ts.total_elapsed_frames if target_frame is not None else 999
+                )
                 if remaining > 3:
                     logger.debug("模板未命中, 尝试 R 验证兜底, attempt=%d", attempt + 1)
                     if self._verify_pause_r(ctrl, ts, attempt):
