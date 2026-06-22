@@ -120,6 +120,9 @@ def locate_oper(
     3. 无缓存/匹配失败 → 逐个点击槽位 → OCR 干员名 → 截取头像存盘
     """
     image = ctrl.post_screencap().wait().get()
+    if image is None:
+        logger.error("截图失败, 游戏可能已退出或最小化")
+        return None
     slots = detect_slots(context, image)
     if not slots:
         logger.error("未检测到干员槽位")
@@ -165,6 +168,9 @@ def locate_oper(
 
         # 截图详情页
         detail_img = ctrl.post_screencap().wait().get()
+        if detail_img is None:
+            logger.warning("截图失败, 跳过该槽位")
+            continue
 
         # OCR 干员名
         name = _ocr_oper_name(context, detail_img)

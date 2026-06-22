@@ -356,9 +356,20 @@ class ExecuteTimeline(CustomAction):
         elif action.action_type == ActionType.RETREAT:
             self._retreat(ctrl, action)
 
+    def _screenshot(self, ctrl: Controller) -> np.ndarray | None:
+        """统一截图入口, 异常或空返回 None。"""
+        try:
+            img = ctrl.post_screencap().wait().get()
+        except Exception:
+            logger.exception("截图失败, 游戏可能已退出或最小化")
+            return None
+        return img
+
     def _read_frames(self, ctrl: Controller, ts: TimeSource) -> int | None:
-        """截图 → TimeSource → 累计帧。"""
-        img = ctrl.post_screencap().wait().get()
+        """截图 → TimeSource → 累计帧。截图异常返回 None。"""
+        img = self._screenshot(ctrl)
+        if img is None:
+            return None
         lf = ts.update(img)
         if lf is None:
             return None
@@ -383,7 +394,10 @@ class ExecuteTimeline(CustomAction):
         while time.time() < deadline:
             if context_tasker_stopping():
                 return
-            img = ctrl.post_screencap().wait().get()
+            img = self._screenshot(ctrl)
+            if img is None:
+                self._abort_reason = "screenshot failed"
+                return
             now = time.time()
             lf = ts.update(img)
             if lf is not None:
@@ -435,7 +449,9 @@ class ExecuteTimeline(CustomAction):
             if context_tasker_stopping():
                 return False
             time.sleep(0.2)
-            img = ctrl.post_screencap().wait().get()
+            img = self._screenshot(ctrl)
+            if img is None:
+                continue
             reco = context.run_recognition("Farm@BattleOn", img)
             if reco and reco.hit:
                 logger.debug("开局暂停: 战斗已加载")
@@ -451,7 +467,9 @@ class ExecuteTimeline(CustomAction):
             self._tap_afa(afa_hotkey.VK_F, "F 开局暂停")
             self._paused = True
             time.sleep(0.03)
-            img = ctrl.post_screencap().wait().get()
+            img = self._screenshot(ctrl)
+            if img is None:
+                continue
             reco = context.run_recognition("BattlePaused", img)
             if reco and reco.hit:
                 logger.debug("开局暂停成功 (Play.png 命中), attempt=%d", i + 1)
@@ -481,7 +499,9 @@ class ExecuteTimeline(CustomAction):
         if context_tasker_stopping():
             return False
         for attempt in range(2):
-            img = ctrl.post_screencap().wait().get()
+            img = self._screenshot(ctrl)
+            if img is None:
+                return False
             reco = context.run_recognition("BattlePaused", img)
             if reco and reco.hit:
                 self._paused = True
@@ -491,7 +511,9 @@ class ExecuteTimeline(CustomAction):
             self._paused = True
             logger.debug("暂停(F), 等待 %dms, attempt=%d", config.PAUSE_WAIT_MS, attempt + 1)
             time.sleep(config.PAUSE_WAIT_MS / 1000)
-            img = ctrl.post_screencap().wait().get()
+            img = self._screenshot(ctrl)
+            if img is None:
+                return False
             reco = context.run_recognition("BattlePaused", img)
             if reco and reco.hit:
                 logger.debug("暂停确认成功(模板命中), attempt=%d", attempt + 1)
@@ -588,7 +610,9 @@ class ExecuteTimeline(CustomAction):
         for _ in range(max_steps):
             if context_tasker_stopping():
                 return
-            img = ctrl.post_screencap().wait().get()
+            img = self._screenshot(ctrl)
+            if img is None:
+                return
             lf = ts.update(img)
             if lf is None:
                 break

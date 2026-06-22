@@ -40,6 +40,7 @@ class MeasurementWorker(QObject):
         self.interval_s = interval_s
         self._running = False
         self._reset_requested = False
+        self._consecutive_errors = 0
         self._latest: dict = {}
         self._lock = threading.Lock()
 
@@ -58,9 +59,19 @@ class MeasurementWorker(QObject):
             try:
                 img = self.controller.post_screencap().wait().get()
                 self.time_source.update(img)
+                self._consecutive_errors = 0
             except Exception:
-                logger.exception("采集/更新失败，跳过")
-                time.sleep(self.interval_s)
+                self._consecutive_errors += 1
+                if self._consecutive_errors <= 3:
+                    logger.warning("截图失败 %d 次", self._consecutive_errors)
+                elif self._consecutive_errors == 4:
+                    logger.error(
+                        "截图连续失败 %d 次, 游戏可能已退出或最小化, 降低重试频率",
+                        self._consecutive_errors,
+                    )
+                # 退避: 前 3 次快重试, 之后 5s 一次
+                backoff = self.interval_s if self._consecutive_errors <= 3 else 5.0
+                time.sleep(backoff)
                 continue
 
             state = {
