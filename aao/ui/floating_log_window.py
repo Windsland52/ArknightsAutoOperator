@@ -218,9 +218,15 @@ class FloatingLogWindow(QWidget):
 
     def set_log_html(self, html: str) -> None:
         self.txt_log.setHtml(html)
+        self.txt_log.verticalScrollBar().setValue(
+            self.txt_log.verticalScrollBar().maximum()
+        )
 
     def append_log(self, html: str) -> None:
         self.txt_log.append(html)
+        self.txt_log.verticalScrollBar().setValue(
+            self.txt_log.verticalScrollBar().maximum()
+        )
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         if obj is self.lbl_status:
