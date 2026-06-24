@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -24,17 +25,21 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QSpinBox,
     QSplitter,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
+from aao import config
 from aao.core.timing.time_source import format_timer
 from aao.ui import floating_state
+from aao.ui.collapsible_box import CollapsibleBox
 from aao.ui.farm_worker import FarmWorker
 from aao.ui.floating_log_window import FloatingLogWindow
 from aao.ui.scrollbar_style import apply_themed_scrollbar
+from aao.ui.settings_page import load_settings, save_settings
 from aao.utils.runtime_paths import project_root
 
 if TYPE_CHECKING:
@@ -110,6 +115,16 @@ class FarmPage(QWidget):
         btn_row.addStretch()
         form.addRow(btn_row)
 
+        # 悬浮日志偏好（紧挨按钮行）
+        chk_row = QHBoxLayout()
+        self.chk_float_log_auto = QCheckBox("开始凹图时自动显示悬浮日志")
+        self.chk_float_log_top = QCheckBox("悬浮日志默认置顶")
+        self.chk_float_log_top.setChecked(True)
+        chk_row.addWidget(self.chk_float_log_auto)
+        chk_row.addWidget(self.chk_float_log_top)
+        chk_row.addStretch()
+        form.addRow(chk_row)
+
         root.addWidget(top)
 
         # 状态区
@@ -124,14 +139,19 @@ class FarmPage(QWidget):
         s.addStretch()
         root.addWidget(status_box)
 
+        # 高级执行参数（默认折叠）
+        self._build_advanced_params(root)
+
         # 结果历史 + 日志（左右分栏）
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setChildrenCollapsible(False)
 
         hist_box = QGroupBox("结果历史")
         hist_box.setStyleSheet("QGroupBox { background: transparent; }")
         hl = QVBoxLayout(hist_box)
         self.list_history = QListWidget()
         apply_themed_scrollbar(self.list_history, "QListWidget { background: transparent; }")
+        self.list_history.setMinimumWidth(160)
         hl.addWidget(self.list_history)
         splitter.addWidget(hist_box)
 
@@ -140,6 +160,7 @@ class FarmPage(QWidget):
         ll = QVBoxLayout(log_box)
         self.txt_log = QTextEdit()
         self.txt_log.setReadOnly(True)
+        self.txt_log.setMinimumWidth(220)
         apply_themed_scrollbar(self.txt_log, "QTextEdit { background: transparent; }")
         self.txt_log.document().setMaximumBlockCount(2000)
         ll.addWidget(self.txt_log)
@@ -154,6 +175,11 @@ class FarmPage(QWidget):
         self.btn_stop.clicked.connect(self._on_stop)
         self.rb_sand.toggled.connect(self._update_practice_visible)
         self.btn_float_log.clicked.connect(self._show_floating_log)
+        self.chk_float_log_auto.toggled.connect(self._on_float_log_pref_changed)
+        self.chk_float_log_top.toggled.connect(self._on_float_log_pref_changed)
+        self._advanced_box.toggled.connect(self._on_advanced_collapsed)
+        for spin in self._advanced_spins:
+            spin.valueChanged.connect(self._on_advanced_param_changed)
         self._update_practice_visible()
 
     def _update_practice_visible(self) -> None:
@@ -161,6 +187,154 @@ class FarmPage(QWidget):
         self.chk_practice.setVisible(not is_sand)
         if is_sand:
             self.chk_practice.setChecked(False)
+
+    # --- 高级执行参数 ---
+
+    def _build_advanced_params(self, root: QVBoxLayout) -> None:
+        """折叠区：10 个帧级执行参数 SpinBox，2×5 网格（左帧阈值 / 右等待时间）。
+
+        用单个 QGridLayout（6 列：label|spin|间隔|label|spin|弹簧），关键点：
+        - setColumnMinimumWidth 给两个 label 列设相同最小宽度，标签列视觉等宽
+        - label 行右对齐，spin 列不拉伸（FieldsStayAtSizeHint 效果），两侧弹簧居中
+        - setHorizontalSpacing/setVerticalSpacing 控制格内留白
+        """
+        box = CollapsibleBox("高级执行参数")
+        box.set_summary("帧阈值 / 等待时间")
+        self._advanced_box = box
+
+        adv_group = QGroupBox("高级执行参数")
+        grid = QGridLayout(adv_group)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(8)
+        # 列：0=label  1=spin  2=间隔  3=label  4=spin
+        # 不给 label 列设最小宽度——让其收缩到最长标签的自然宽度，
+        # 标签左对齐使空白落在标签右侧（标签↔spinner 之间，自然间距），
+        # 避免 AlignRight + forced min-width 导致的左侧强迫空白。
+        grid.setColumnMinimumWidth(2, 24)  # 中间分隔列
+
+        # 左列：帧阈值
+        self.spin_bullet = self._make_spin(0, 30, config.BULLET_THRESHOLD)
+        self.spin_speedup = self._make_spin(10, 600, config.SPEED_UP_THRESHOLD)
+        self.spin_big_step = self._make_spin(4, 30, config.BIG_STEP_THRESHOLD)
+        self.spin_big_step.setToolTip("剩余帧数≥此值时用 T（快），否则用 R（慢）")
+        self.spin_accept_early = self._make_spin(0, 3, config.ACCEPT_EARLY_FRAMES)
+        self.spin_accept_early.setToolTip("允许动作提前触发的帧数（0=严格同帧）")
+        self.spin_accept_late = self._make_spin(0, 5, config.ACCEPT_LATE_FRAMES)
+        self.spin_accept_late.setToolTip("动作晚于目标多少帧仍可接受")
+
+        # 右列：等待时间
+        self.spin_general_wait = self._make_spin(10, 2000, config.GENERAL_WAIT_MS, step=10)
+        self.spin_mouse_wait = self._make_spin(10, 1000, config.MOUSE_WAIT_MS, step=10)
+        self.spin_min_wait = self._make_spin(1, 500, config.MINIMUM_WAIT_MS, step=5)
+        self.spin_pause_wait = self._make_spin(20, 500, config.PAUSE_WAIT_MS, step=10)
+        self.spin_step_wait = self._make_spin(20, 500, config.STEP_WAIT_MS, step=10)
+
+        rows = [
+            # (左标签, 左 spin, 右标签, 右 spin)
+            ("步进阈值（帧）", self.spin_bullet, "通用等待（ms）", self.spin_general_wait),
+            ("加速阈值（帧）", self.spin_speedup, "鼠标等待（ms）", self.spin_mouse_wait),
+            ("T 步进阈值（帧）", self.spin_big_step, "最小等待（ms）", self.spin_min_wait),
+            ("提前容忍（帧）", self.spin_accept_early, "暂停等待（ms）", self.spin_pause_wait),
+            ("延后容忍（帧）", self.spin_accept_late, "步进等待（ms）", self.spin_step_wait),
+        ]
+        align_r = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        for r, (ll, lw, rl, rw) in enumerate(rows):
+            grid.addWidget(self._mk_lbl(ll, align_r), r, 0)
+            grid.addWidget(lw, r, 1)
+            grid.addWidget(self._mk_lbl(rl, align_r), r, 3)
+            grid.addWidget(rw, r, 4)
+
+        self._advanced_spins = [
+            self.spin_bullet, self.spin_speedup, self.spin_big_step,
+            self.spin_accept_early, self.spin_accept_late,
+            self.spin_general_wait, self.spin_mouse_wait, self.spin_min_wait,
+            self.spin_pause_wait, self.spin_step_wait,
+        ]
+
+        box.add_widget(adv_group)
+        box.set_expanded(False)
+        root.addWidget(box)
+
+    @staticmethod
+    def _make_spin(
+        lo: int, hi: int, val: int, suffix: str = "", step: int = 1
+    ) -> QSpinBox:
+        s = QSpinBox()
+        s.setRange(lo, hi)
+        s.setSingleStep(step)
+        s.setValue(val)
+        if suffix:
+            s.setSuffix(suffix)
+        s.setMaximumWidth(120)
+        return s
+
+    @staticmethod
+    def _mk_lbl(text: str, alignment: Qt.AlignmentFlag) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setAlignment(alignment)
+        return lbl
+
+    def _load_advanced_settings(self) -> None:
+        s = load_settings()
+        self.chk_float_log_auto.setChecked(s.get("floating_log_auto_show", False))
+        self.chk_float_log_top.setChecked(s.get("floating_log_topmost", True))
+        self.spin_bullet.setValue(s.get("bullet_threshold", config.BULLET_THRESHOLD))
+        self.spin_speedup.setValue(s.get("speed_up_threshold", config.SPEED_UP_THRESHOLD))
+        self.spin_general_wait.setValue(s.get("general_wait_ms", config.GENERAL_WAIT_MS))
+        self.spin_mouse_wait.setValue(s.get("mouse_wait_ms", config.MOUSE_WAIT_MS))
+        self.spin_min_wait.setValue(s.get("minimum_wait_ms", config.MINIMUM_WAIT_MS))
+        self.spin_pause_wait.setValue(s.get("pause_wait_ms", config.PAUSE_WAIT_MS))
+        self.spin_step_wait.setValue(s.get("step_wait_ms", config.STEP_WAIT_MS))
+        self.spin_big_step.setValue(s.get("big_step_threshold", config.BIG_STEP_THRESHOLD))
+        self.spin_accept_early.setValue(s.get("accept_early_frames", config.ACCEPT_EARLY_FRAMES))
+        self.spin_accept_late.setValue(s.get("accept_late_frames", config.ACCEPT_LATE_FRAMES))
+        states = s.get("collapsible_sections", {})
+        if isinstance(states, dict) and "farm_advanced_params" in states:
+            self._advanced_box.set_expanded(bool(states["farm_advanced_params"]))
+
+    def _on_advanced_param_changed(self) -> None:
+        """即时保存到 settings.json + 覆盖 config（下次凹图立即生效）。"""
+        data = load_settings()
+        data.update(
+            {
+                "bullet_threshold": self.spin_bullet.value(),
+                "speed_up_threshold": self.spin_speedup.value(),
+                "general_wait_ms": self.spin_general_wait.value(),
+                "mouse_wait_ms": self.spin_mouse_wait.value(),
+                "minimum_wait_ms": self.spin_min_wait.value(),
+                "pause_wait_ms": self.spin_pause_wait.value(),
+                "step_wait_ms": self.spin_step_wait.value(),
+                "big_step_threshold": self.spin_big_step.value(),
+                "accept_early_frames": self.spin_accept_early.value(),
+                "accept_late_frames": self.spin_accept_late.value(),
+            }
+        )
+        save_settings(data)
+        config.BULLET_THRESHOLD = self.spin_bullet.value()
+        config.SPEED_UP_THRESHOLD = self.spin_speedup.value()
+        config.GENERAL_WAIT_MS = self.spin_general_wait.value()
+        config.MOUSE_WAIT_MS = self.spin_mouse_wait.value()
+        config.MINIMUM_WAIT_MS = self.spin_min_wait.value()
+        config.PAUSE_WAIT_MS = self.spin_pause_wait.value()
+        config.STEP_WAIT_MS = self.spin_step_wait.value()
+        config.BIG_STEP_THRESHOLD = self.spin_big_step.value()
+        config.ACCEPT_EARLY_FRAMES = self.spin_accept_early.value()
+        config.ACCEPT_LATE_FRAMES = self.spin_accept_late.value()
+
+    def _on_float_log_pref_changed(self) -> None:
+        data = load_settings()
+        data["floating_log_auto_show"] = self.chk_float_log_auto.isChecked()
+        data["floating_log_topmost"] = self.chk_float_log_top.isChecked()
+        save_settings(data)
+
+    def _on_advanced_collapsed(self, expanded: bool) -> None:
+        data = load_settings()
+        states = data.get("collapsible_sections", {})
+        if not isinstance(states, dict):
+            states = {}
+        states["farm_advanced_params"] = expanded
+        data["collapsible_sections"] = states
+        save_settings(data)
 
     def _load_timelines(self) -> None:
         cur = self.cb_timeline.currentText()
@@ -184,6 +358,7 @@ class FarmPage(QWidget):
         # 切到凹图页时刷新下拉（新加的 timeline/profile 立即可见）
         self._load_timelines()
         self._load_profiles()
+        self._load_advanced_settings()
         super().showEvent(event)
 
     # --- 注入（由 MainWindow 调用）---
@@ -212,8 +387,6 @@ class FarmPage(QWidget):
 
     def _show_floating_log(self) -> None:
         log_win = self._ensure_floating_log()
-        from aao.ui.settings_page import load_settings
-
         log_win.set_always_on_top(load_settings().get("floating_log_topmost", True))
         log_win.show()
         log_win.raise_()
@@ -261,8 +434,6 @@ class FarmPage(QWidget):
         self.list_history.clear()
         self._round_start_time = None
         self.busy_changed.emit(True)
-        from aao.ui.settings_page import load_settings
-
         s = load_settings()
         if s.get("floating_log_auto_show", False):
             self._show_floating_log()
@@ -359,6 +530,9 @@ class FarmPage(QWidget):
             self.chk_practice,
             self.edit_retries,
             self.cb_profile,
+            self.chk_float_log_auto,
+            self.chk_float_log_top,
+            *self._advanced_spins,
         ):
             w.setEnabled(enabled)
 
