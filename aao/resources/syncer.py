@@ -1,9 +1,8 @@
-"""资源同步器：从 MaaAssistantArknights（本地或远程 GitHub）提取干员/地图数据。
+"""资源同步器：从 MaaAssistantArknights（GitHub dev-v2 分支）提取干员/地图数据。
 
 用法：
-    uv run python -m aao.resources.syncer           # 同步全部（本地优先，远程回退）
-    uv run python -m aao.resources.syncer --remote  # 强制从 GitHub 下载
-    uv run python -m aao.resources.syncer --remote --proxy http://127.0.0.1:7890
+    uv run python -m aao.resources.syncer           # 同步全部
+    uv run python -m aao.resources.syncer --proxy http://127.0.0.1:7890
 
 产出（到 data/）：
 - operator_mapping.json / operator_names.json：干员名 + charId
@@ -16,7 +15,7 @@
 from __future__ import annotations
 
 import json
-import shutil
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -25,15 +24,16 @@ from typing import Any
 from aao.utils.logger import logger, setup_logging
 from aao.utils.runtime_paths import project_root
 
-# 本地源（开发环境）
-_MAA_ROOT = Path("../MaaAssistantArknights")
-_BATTLE_DATA_LOCAL = _MAA_ROOT / "resource" / "battle_data.json"
-_TILE_POS_LOCAL = _MAA_ROOT / "resource" / "Arknights-Tile-Pos"
-
-# 远程源（用户环境）—— MAA 资源已移至 dev-v2 分支（main 分支无 battle_data / Tile-Pos）
-_GITHUB = "https://raw.githubusercontent.com/MaaAssistantArknights/MaaAssistantArknights/dev-v2"
+# 主源：GitHub dev-v2 分支（main 分支改名而来）
+_REPO = "MaaAssistantArknights/MaaAssistantArknights"
+_BRANCH = "dev-v2"
+_GITHUB = f"https://raw.githubusercontent.com/{_REPO}/{_BRANCH}"
 _BATTLE_DATA_REMOTE = f"{_GITHUB}/resource/battle_data.json"
-_TILE_POS_API = "https://api.github.com/repos/MaaAssistantArknights/MaaAssistantArknights/contents/resource/Arknights-Tile-Pos?ref=dev-v2"
+# 列表 API：用 git trees recursive 一次性拿到整个分支所有 path+sha。
+# GitHub Contents API 对大目录最多返回 1000 项且不真分页（page=N 回放同一批数据），
+# Arknights-Tile-Pos 目录已超 3000 文件，Contents API 会漏掉大量新关卡。
+_TREES_API = f"https://api.github.com/repos/{_REPO}/git/trees/{_BRANCH}?recursive=1"
+_TILE_POS_PREFIX = "resource/Arknights-Tile-Pos/"
 
 _MAP_MANIFEST = ".manifest.json"
 _MAX_WORKERS = 8
@@ -100,13 +100,60 @@ def _download(
         return False
 
 
-def _get_battle_data(
-    opener: urllib.request.OpenerDirector, force_remote: bool = False, token: str | None = None
-) -> dict[str, Any] | None:
-    """获取 battle_data.json（本地优先，远程回退）。"""
-    if not force_remote and _BATTLE_DATA_LOCAL.exists():
-        return json.loads(_BATTLE_DATA_LOCAL.read_text(encoding="utf-8"))
+def _list_remote_tiles(
+    opener: urllib.request.OpenerDirector, token: str | None = None
+) -> list[dict[str, str]] | None:
+    """用 git trees API（recursive=1）一次性拉取整个分支所有 path+sha。
 
+    返回 list[{name, sha, raw_url}]，仅包含 Arknights-Tile-Pos 下的 .json blob
+    （过滤掉 ``#f#`` 命名的分支变体文件）。
+
+    为什么不用 Contents API：GitHub Contents API 对单目录硬上限 1000 项，
+    且 page=N 会回放同一批数据（不真分页）。Arknights-Tile-Pos 已超 3000 文件，
+    Contents API 漏掉大量新关卡，syncer 也就永远拿不到 act26side / main_14 等新增。
+    git/trees?recursive=1 一次拉完整树（实测 3987 项也远未到 100000 上限），
+    blob sha 与 Contents API sha 一致，可直接沿用同一份 manifest。
+    """
+    logger.info("从 GitHub git/trees 拉取 dev-v2 完整树...")
+    try:
+        with opener.open(_make_request(_TREES_API, token), timeout=60) as resp:
+            data = json.loads(resp.read())
+    except Exception as e:  # noqa: BLE001
+        logger.error("拉取 git/trees 失败: %s", e)
+        return None
+
+    if data.get("truncated"):
+        logger.error("git/trees 返回 truncated=true，分支过大，需按子目录分批拉取（当前未实现）。")
+        return None
+
+    result: list[dict[str, str]] = []
+    for entry in data.get("tree", []):
+        if entry.get("type") != "blob":
+            continue
+        path: str = entry.get("path", "")
+        if not path.startswith(_TILE_POS_PREFIX) or not path.endswith(".json"):
+            continue
+        name = path[len(_TILE_POS_PREFIX) :]
+        if "#f#" in name:
+            continue
+        result.append(
+            {
+                "name": name,
+                "sha": entry.get("sha", ""),
+                # path 里的 ``#`` 会被 urllib 当作 URL fragment 起始符，
+                # 实际 path 在 ``#`` 之前就截断了，GitHub raw 返回 404。
+                # 把 path 部分单独 quote：保留 ``/`` 不动，编码 ``#`` 为 ``%23``。
+                "raw_url": f"{_GITHUB}/{urllib.parse.quote(path, safe='/')}",
+            }
+        )
+    logger.info("git/trees: Tile-Pos 远端文件 %d 个", len(result))
+    return result
+
+
+def _get_battle_data(
+    opener: urllib.request.OpenerDirector, token: str | None = None
+) -> dict[str, Any] | None:
+    """从 GitHub 下载 battle_data.json。"""
     logger.info("从 GitHub 下载 battle_data.json...")
     tmp = project_root() / "data" / ".battle_data.json"
     tmp.parent.mkdir(parents=True, exist_ok=True)
@@ -115,13 +162,13 @@ def _get_battle_data(
     return None
 
 
-def sync_operators(force_remote: bool = False, proxy: str | None = None) -> None:
+def sync_operators(proxy: str | None = None) -> None:
     data_dir = project_root() / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
 
     opener = _make_opener(proxy or _settings_proxy())
     token = _settings_github_token()
-    raw = _get_battle_data(opener, force_remote, token=token)
+    raw = _get_battle_data(opener, token=token)
     if raw is None:
         logger.error("无法获取 battle_data.json")
         return
@@ -153,18 +200,28 @@ def sync_operators(force_remote: bool = False, proxy: str | None = None) -> None
     logger.info("干员数据: %d 名", len(names))
 
 
-def sync_maps(force_remote: bool = False, proxy: str | None = None) -> None:
-    data_dir = project_root() / "data"
-    map_dir = data_dir / "map"
-    map_dir.mkdir(parents=True, exist_ok=True)
+def rebuild_level_codes() -> int:
+    """扫盘 data/map/*.json，重写 data/level_codes.json (代号 → 文件名)。
 
-    opener = _make_opener(proxy or _settings_proxy())
-    token = _settings_github_token()
-    if not force_remote and _TILE_POS_LOCAL.exists():
-        count = _copy_maps_local(_TILE_POS_LOCAL, map_dir)
-    else:
-        count = _download_maps_remote(map_dir, opener, token=token)
+    独立于下载：即便上次 sync_maps 中途被中断、manifest 未提交，
+    只要 disk 上有 .json 文件，本函数就能让运行时关卡查找反映 disk 真相。
+    CLI: `python -m aao.resources.syncer --rebuild-codes`。
+    """
+    map_dir = project_root() / "data" / "map"
+    if not map_dir.exists():
+        logger.error("data/map 不存在，无可扫描的地图文件")
+        return 0
+    return _rebuild_level_codes(map_dir)
 
+
+def _rebuild_level_codes(map_dir: Path) -> int:
+    """扫盘 map/*.json，重写 data/level_codes.json (代号 → 文件名)。
+
+    独立于下载：即便上次 sync_maps 中途被中断下载未完成、manifest 未提交，
+    只要 disk 上有 .json 文件，本函数就能让运行时关卡查找反映 disk 真相。
+    返回收录的代号数量。
+    """
+    data_dir = map_dir.parent
     codes: dict[str, str] = {}
     for p in map_dir.glob("*.json"):
         if "#f#" in p.name or p.name == _MAP_MANIFEST:
@@ -180,17 +237,26 @@ def sync_maps(force_remote: bool = False, proxy: str | None = None) -> None:
         json.dumps(dict(sorted(codes.items())), indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    logger.info("地图数据: %d 文件 (%d 关)", count, len(codes))
+    return len(codes)
 
 
-def _copy_maps_local(src_dir: Path, dst_dir: Path) -> int:
-    count = 0
-    for src in src_dir.glob("*.json"):
-        if "#f#" in src.name:
-            continue
-        shutil.copy2(src, dst_dir / src.name)
-        count += 1
-    return count
+def sync_maps(proxy: str | None = None) -> None:
+    data_dir = project_root() / "data"
+    map_dir = data_dir / "map"
+    map_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. 先扫盘生成 level_codes.json —— 即便下载从未成功，运行期也能用已落盘的旧地图。
+    pre_codes = _rebuild_level_codes(map_dir)
+    logger.info("level_codes.json 初始刷新: %d 关", pre_codes)
+
+    # 2. 增量下载（基于 git/trees blob sha）。
+    opener = _make_opener(proxy or _settings_proxy())
+    token = _settings_github_token()
+    count = _download_maps_remote(map_dir, opener, token=token)
+
+    # 3. 下载完成后再扫一次，把新关卡也写进 level_codes.json。
+    post_codes = _rebuild_level_codes(map_dir)
+    logger.info("地图数据: %d 文件, level_codes=%d 关", count, post_codes)
 
 
 def _load_manifest(path: Path) -> dict[str, str]:
@@ -205,17 +271,16 @@ def _load_manifest(path: Path) -> dict[str, str]:
 def _download_maps_remote(
     dst_dir: Path, opener: urllib.request.OpenerDirector, token: str | None = None
 ) -> int:
-    """从 GitHub API 批量下载地图文件。
+    """从 GitHub 下载地图文件（增量：基于 git/trees blob sha）。
 
-    增量机制：GitHub Contents API 返回 sha；本地 .manifest.json 记录 sha。
-    文件存在且 sha 未变 → 跳过；sha 变化/缺失 → 重新下载。下载并发执行。
+    git/trees 一次拉完整分支树；Arknights-Tile-Pos 子树下每个 .json blob 的 sha
+    与 Contents API sha 一致，可直接与本地的 .manifest.json 比对：
+    - 文件存在且 sha 与远端一致 → 跳过
+    - sha 变化或缺失 → 并发下载 raw URL
+    失败的不更新 manifest sha，下次重试。
     """
-    logger.info("从 GitHub 下载地图列表...")
-    try:
-        with opener.open(_make_request(_TILE_POS_API, token), timeout=30) as resp:
-            files = json.loads(resp.read())
-    except Exception as e:  # noqa: BLE001
-        logger.error("无法获取地图列表: %s", e)
+    files = _list_remote_tiles(opener, token)
+    if files is None:
         return 0
 
     manifest_path = dst_dir / _MAP_MANIFEST
@@ -225,16 +290,24 @@ def _download_maps_remote(
     ready = 0
 
     for f in files:
-        if f.get("type") != "file" or "#f#" in f.get("name", ""):
-            continue
         name = f["name"]
-        sha = f.get("sha", "")
+        sha = f["sha"]
+        url = f["raw_url"]
         remote_names.add(name)
         dst = dst_dir / name
         if dst.exists() and manifest.get(name) == sha:
             ready += 1
             continue
-        tasks.append((name, f["download_url"], dst, sha))
+        tasks.append((name, url, dst, sha))
+
+    def _commit_manifest() -> None:
+        # 落盘前过滤：只保留远端仍存在且 disk 上确实存在的文件 sha。
+        saved = {
+            name: manifest[name]
+            for name in sorted(remote_names)
+            if (dst_dir / name).exists() and manifest.get(name)
+        }
+        manifest_path.write_text(json.dumps(saved, indent=2, ensure_ascii=False), encoding="utf-8")
 
     if tasks:
         logger.info("地图增量下载: %d 个需更新 / %d 个总文件", len(tasks), ready + len(tasks))
@@ -250,27 +323,21 @@ def _download_maps_remote(
                     ready += 1
                     done += 1
                     manifest[name] = sha
-                if done and done % 100 == 0:
-                    logger.info("地图下载进度: %d/%d", done, len(tasks))
+                    # chunked commit：每 100 个落盘一次，被中断也不丢进度。
+                    if done % 100 == 0:
+                        _commit_manifest()
+                        logger.info("地图下载进度: %d/%d", done, len(tasks))
     else:
         logger.info("地图数据已是最新（%d 文件）", ready)
 
-    # 只写入远端仍存在且本地已成功下载/存在的文件 sha；失败的下次会重试。
-    saved_manifest = {
-        name: manifest[name]
-        for name in sorted(remote_names)
-        if (dst_dir / name).exists() and manifest.get(name)
-    }
-    manifest_path.write_text(
-        json.dumps(saved_manifest, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    _commit_manifest()
     return ready
 
 
-def sync_all(force_remote: bool = False, proxy: str | None = None) -> None:
-    logger.info("资源同步%s...", "（远程）" if force_remote else "")
-    sync_operators(force_remote, proxy=proxy)
-    sync_maps(force_remote, proxy=proxy)
+def sync_all(proxy: str | None = None) -> None:
+    logger.info("资源同步（远程）...")
+    sync_operators(proxy=proxy)
+    sync_maps(proxy=proxy)
     logger.info("资源同步完成")
 
 
@@ -281,13 +348,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="资源同步器")
     parser.add_argument("--operators", action="store_true")
     parser.add_argument("--maps", action="store_true")
-    parser.add_argument("--remote", action="store_true", help="强制从 GitHub 下载")
+    parser.add_argument(
+        "--rebuild-codes",
+        action="store_true",
+        help="只重写 level_codes.json（不下载，扫盘即可）",
+    )
     parser.add_argument("--proxy", default=None, help="HTTP/HTTPS 代理，如 http://127.0.0.1:7890")
     args = parser.parse_args()
 
-    if args.operators:
-        sync_operators(args.remote, proxy=args.proxy)
+    if args.rebuild_codes:
+        n = rebuild_level_codes()
+        print(f"level_codes.json: {n} 关")
+    elif args.operators:
+        sync_operators(proxy=args.proxy)
     elif args.maps:
-        sync_maps(args.remote, proxy=args.proxy)
+        sync_maps(proxy=args.proxy)
     else:
-        sync_all(args.remote, proxy=args.proxy)
+        sync_all(proxy=args.proxy)
