@@ -80,7 +80,7 @@ jobs:
                   curl -fsSL "https://github.com/$repo/releases/download/$tag/AFA.exe" -o dist/aao.app/afa/AFA.exe
                   curl -fsSL "https://raw.githubusercontent.com/$repo/$tag/LICENSE" -o dist/aao.app/afa/LICENSE || echo "[WARN] AFA LICENSE 未取到"
             - name: Sync game data
-              run: uv run python -m aao.resources.syncer --remote
+              run: uv run python -m aao.resources.syncer
             - name: Stage external resources
               shell: bash
               run: |
