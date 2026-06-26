@@ -68,16 +68,15 @@ class _ResourceWorker(QObject):
     finished_ok = Signal(str)  # 总结消息
     failed = Signal(str)
 
-    def __init__(self, mode: str, force_remote: bool):
+    def __init__(self, mode: str):
         super().__init__()
         self._mode = mode  # "sync" | "check_update" | "update_all"
-        self._force_remote = force_remote
 
     def run(self) -> None:
         try:
             if self._mode == "sync":
                 self.log.emit("开始同步资源（干员名 + 地图）...")
-                sync_all(self._force_remote)
+                sync_all()
                 self.finished_ok.emit("资源同步完成")
             elif self._mode == "check_update":
                 self.log.emit("检查 GitHub 最新版本...")
@@ -253,9 +252,8 @@ class SettingsPage(QWidget):
         rl.addLayout(proxy_form)
         btn_row = QHBoxLayout()
         self.btn_sync = QPushButton("🔄 同步资源")
-        self.btn_sync_remote = QPushButton("🌐 强制远程同步")
         self.btn_check = QPushButton("🔍 检查更新")
-        for b in (self.btn_sync, self.btn_sync_remote, self.btn_check):
+        for b in (self.btn_sync, self.btn_check):
             btn_row.addWidget(b)
         btn_row.addStretch()
         rl.addLayout(btn_row)
@@ -272,9 +270,7 @@ class SettingsPage(QWidget):
         self.cb_close_action.addItems(["每次询问", "最小化到托盘", "退出程序"])
         ui_form.addRow("关闭窗口时:", self.cb_close_action)
 
-        self._add_collapsible(
-            root, "settings_software", "软件设置", ui_box, "主题 / 关闭行为"
-        )
+        self._add_collapsible(root, "settings_software", "软件设置", ui_box, "主题 / 关闭行为")
 
         # --- 背景图 ---
         bg_box = QGroupBox("背景图")
@@ -310,9 +306,8 @@ class SettingsPage(QWidget):
         self.btn_bg_pick.clicked.connect(self._on_bg_pick)
         self.btn_bg_clear.clicked.connect(self._on_bg_clear)
         self.slider_bg.valueChanged.connect(self._on_bg_opacity)
-        self.btn_sync.clicked.connect(lambda: self._run_resource("sync", False))
-        self.btn_sync_remote.clicked.connect(lambda: self._run_resource("sync", True))
-        self.btn_check.clicked.connect(lambda: self._run_resource("check_update", False))
+        self.btn_sync.clicked.connect(lambda: self._run_resource("sync"))
+        self.btn_check.clicked.connect(lambda: self._run_resource("check_update"))
         self.btn_refresh_win.clicked.connect(self._refresh_windows)
         self.btn_preview.clicked.connect(self._preview_window)
         self.btn_save_win.clicked.connect(self._save_window)
@@ -563,13 +558,13 @@ class SettingsPage(QWidget):
         self.lbl_op.setText("设置已保存（端口/profile/代理/Token 变更需重启或下次同步生效）")
         self.settings_changed.emit()
 
-    def _run_resource(self, mode: str, force_remote: bool) -> None:
+    def _run_resource(self, mode: str) -> None:
         if self._thread is not None:
             self.lbl_op.setText("上一次操作还在进行中…")
             return
         self._set_res_buttons(False)
         self.lbl_op.setText("进行中…")
-        self._worker = _ResourceWorker(mode, force_remote)
+        self._worker = _ResourceWorker(mode)
         self._thread = QThread()
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
@@ -587,7 +582,7 @@ class SettingsPage(QWidget):
         self.lbl_res_status.setText(self._res_status_text())
 
     def _set_res_buttons(self, enabled: bool) -> None:
-        for b in (self.btn_sync, self.btn_sync_remote, self.btn_check):
+        for b in (self.btn_sync, self.btn_check):
             b.setEnabled(enabled)
 
     def _cleanup_thread(self) -> None:

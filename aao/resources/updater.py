@@ -60,18 +60,16 @@ class UpdateChecker:
 
     def update_resources(
         self,
-        force_remote: bool = True,
         progress_cb: Callable[[str], None] | None = None,
     ) -> None:
         """从远程更新全部资源（干员名 + 地图）。
 
         Args:
-            force_remote: 强制从 GitHub 下载（不依赖 sibling repo）。
             progress_cb: 可选进度回调 (message: str) -> None。
         """
         steps = [
-            ("干员名", lambda: syncer.sync_operators(force_remote)),
-            ("地图", lambda: syncer.sync_maps(force_remote)),
+            ("干员名", lambda: syncer.sync_operators()),
+            ("地图", lambda: syncer.sync_maps()),
         ]
 
         for name, fn in steps:
