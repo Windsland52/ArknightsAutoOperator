@@ -245,10 +245,16 @@ class FarmPage(QWidget):
             grid.addWidget(rw, r, 4)
 
         self._advanced_spins = [
-            self.spin_bullet, self.spin_speedup, self.spin_big_step,
-            self.spin_accept_early, self.spin_accept_late,
-            self.spin_general_wait, self.spin_mouse_wait, self.spin_min_wait,
-            self.spin_pause_wait, self.spin_step_wait,
+            self.spin_bullet,
+            self.spin_speedup,
+            self.spin_big_step,
+            self.spin_accept_early,
+            self.spin_accept_late,
+            self.spin_general_wait,
+            self.spin_mouse_wait,
+            self.spin_min_wait,
+            self.spin_pause_wait,
+            self.spin_step_wait,
         ]
 
         box.add_widget(adv_group)
@@ -256,9 +262,7 @@ class FarmPage(QWidget):
         root.addWidget(box)
 
     @staticmethod
-    def _make_spin(
-        lo: int, hi: int, val: int, suffix: str = "", step: int = 1
-    ) -> QSpinBox:
+    def _make_spin(lo: int, hi: int, val: int, suffix: str = "", step: int = 1) -> QSpinBox:
         s = QSpinBox()
         s.setRange(lo, hi)
         s.setSingleStep(step)
