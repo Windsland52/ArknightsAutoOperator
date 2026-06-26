@@ -34,6 +34,9 @@ config/
 # Generated game data (run: uv run python -m aao.resources.syncer)
 data/map/
 data/.battle_data.json
+data/level_codes.json
+data/operator_mapping.json
+data/operator_names.json
 resource/base/image/avatar/
 
 # Reference projects (local clones, not part of this repo)

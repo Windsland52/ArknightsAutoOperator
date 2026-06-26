@@ -49,14 +49,19 @@ uv sync
 # 当前使用混合档：det=small，rec/keys=tiny
 uv run python tools/configure.py
 
+# 同步游戏数据：生成 data/ 下的干员名/映射 + 关卡地图 + 关卡代号
+# 干员数据来自远程 battle_data.json，关卡代号扫盘 data/map 生成
+# （这些 data/ 文件均为生成物，不入库，clone 后需手动跑一次）
+uv run python -m aao.resources.syncer
+
 # 启动主控台（可选 --profile xxx.json）
 uv run python -m aao.app
-
-# 可选：同步干员名 + 地图数据
-uv run python -m aao.resources.syncer
 ```
 
 前置：管理员终端（PostMessage 输入需 UIPI 权限）+ AFA（arknights-frame-assistant）常驻 + 游戏窗口前台。
+
+> [!NOTE]
+> `data/` 下的 JSON（`operator_mapping`/`operator_names`/`level_codes`/`map/` 等）全部由 syncer 生成，不进 git。未同步时应用仍可启动，但关卡代号、干员名补全、avatar 匹配不可用；也可在设置页点「🔄 同步资源」按需更新。
 
 ## 项目结构
 
@@ -74,6 +79,7 @@ custom/     MAA custom 实现（pipeline 调用）
   reco/     ClickStage（关卡 OCR + 凹图计数）
   registry.py / outcome.py
 resource/   MAA pipeline（farm.json 自循环）/ image 模板 / ocr 模型
+data/       生成物：干员名/映射 + 关卡地图 + 关卡代号（syncer 生成，不入库）
 config/     calibration（校准）/ timelines（时间轴）/ settings.json
 debug/      日志（aao/YYYY-MM-DD.log，按天轮转保留 2 周）
 ```
