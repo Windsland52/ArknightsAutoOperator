@@ -44,8 +44,13 @@ class SyncResult:
         if self.error:
             return f"{self.name}更新失败：{self.error}"
         if self.failed == 0:
+            if self.done == 0 and self.skipped > 0:
+                return f"{self.name}已是最新（{self.skipped} 条）"
+            if self.skipped > 0:
+                return f"{self.name}更新完成（新 {self.done} 条，已最新 {self.skipped} 条）"
             return f"{self.name}更新完成（{self.done} 条）"
         return f"{self.name}部分失败（成功 {self.done}，失败 {self.failed}）"
+
 
 # 主源：GitHub dev-v2 分支（main 分支改名而来）
 _REPO = "MaaAssistantArknights/MaaAssistantArknights"
@@ -300,14 +305,22 @@ def sync_maps(proxy: str | None = None) -> SyncResult:
         return SyncResult(ok=False, name="地图", error="无法拉取 git/trees")
 
     ready, done, failed = result
-    logger.info("地图数据: ready=%d done=%d failed=%d, level_codes=%d 关", ready, done, failed, post_codes)
+    # ready = skipped(此前已是最新) + done(本次新下载成功的)
+    skipped = ready - done
+    logger.info(
+        "地图数据: ready=%d done=%d failed=%d, level_codes=%d 关",
+        ready,
+        done,
+        failed,
+        post_codes,
+    )
     return SyncResult(
         ok=failed == 0,
         name="地图",
-        total=ready + failed,
-        done=ready,
+        total=ready + failed,  # 远端总条目数
+        done=done,  # 本次实际下载成功条数
         failed=failed,
-        skipped=ready - done,
+        skipped=skipped,  # 已是最新被跳过的
     )
 
 
