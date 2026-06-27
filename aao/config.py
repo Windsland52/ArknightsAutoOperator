@@ -41,6 +41,12 @@ MASKED_MAX_BRIGHTNESS = 165
 GRAY_TOLERANCE = 20
 PIXEL_TOLERANCE = 5  # frame-map nearest-match tolerance
 
+# --- Negative-cost (可露希尔) minus-sign detection ---
+# maafw 截图统一缩放到 1280x720，故减号 ROI 用固定坐标（无需按分辨率换算）。
+# 减号是费用数字前的一段集中横向纯白 run；正数字笔画不会在这条窄横条内产生长 run。
+COST_SIGN_ROI = (1214, 531, 27, 9)  # (x, y, w, h) @ 1280x720
+COST_SIGN_MIN_RUN = 12  # 触发判定的最小连续纯白像素数（实测减号 ≈19px）
+
 # --- Timing (frames / ms) ---
 FRAMES_PER_SECOND = 30
 TICK_MAX_DEFAULT = 30  # 1s = 30 ticks

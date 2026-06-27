@@ -304,7 +304,9 @@ class MainWindow(QMainWindow):
                 self.overlay = OverlayWindow()
                 self.overlay.show()
             self.worker = MeasurementWorker(
-                controller, self._calibration_data, profile_name=self._profile_name
+                controller,
+                self._calibration_data,
+                profile_name=self._profile_name,
             )
             self.worker_thread = QThread()
             self.worker.moveToThread(self.worker_thread)

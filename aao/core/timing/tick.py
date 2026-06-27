@@ -149,6 +149,43 @@ def get_logical_frame(frame: np.ndarray, roi: Roi, pixel_map: dict[str, int]) ->
     return best_frame if best_diff <= config.PIXEL_TOLERANCE else None
 
 
+def detect_negative_cost(frame: np.ndarray) -> bool:
+    """检测费用是否为负（可露希尔负费）。
+
+    减号是费用数字前的一段集中横向纯白 run（实测 ≈19px）；正数字笔画不会在
+    这条窄横条 ROI 内产生同等长度的连续纯白 run。在 ``COST_SIGN_ROI`` 内逐行扫描，
+    任一行的最长连续纯白 run ≥ ``COST_SIGN_MIN_RUN`` 即判定为负费。
+
+    maafw 截图统一缩放到 1280x720，故 ROI 用固定坐标。
+
+    Args:
+        frame: BGR ndarray (H, W, 3) uint8。
+
+    Returns:
+        True 表示检测到减号（负费）。
+    """
+    x, y, w, h = config.COST_SIGN_ROI
+    fh, fw = frame.shape[:2]
+    if x < 0 or y < 0 or x + w > fw or y + h > fh:
+        return False
+
+    region = frame[y : y + h, x : x + w].astype(np.int16)  # (h, w, 3) BGR
+    white = (region > config.WHITE_THRESHOLD).all(axis=2)  # (h, w) bool
+
+    # 逐行求最长连续纯白 run：对每行做行内累计，遇非白清零，取全局最大。
+    for row in white:  # pyright: ignore[reportGeneralTypeIssues]
+        if not row.any():
+            continue
+        # 累计连续 True 长度：cumsum 在非白处“断点”归零的经典向量化写法。
+        idx = np.arange(len(row))
+        # 每个位置减去“上一个非白位置”，得到当前连续白的长度。
+        last_false = np.where(row, 0, idx)
+        max_run = int((idx - np.maximum.accumulate(last_false)).max())
+        if max_run >= config.COST_SIGN_MIN_RUN:
+            return True
+    return False
+
+
 def detect(frame: np.ndarray, pixel_map: dict[str, int] | None = None) -> tuple[Roi, int | None]:
     """便捷：算 ROI + 取填充宽（+ 可选逻辑帧）。
 

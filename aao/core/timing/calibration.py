@@ -15,6 +15,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from statistics import median
+from typing import Any
 
 import numpy as np
 
@@ -240,9 +241,8 @@ def save(data: FullCalibrationData, basename: str) -> str:
     return filename
 
 
-def load(filename: str) -> FullCalibrationData:
-    path = calibration_dir() / filename
-    raw = json.loads(path.read_text(encoding="utf-8"))
+def from_dict(raw: dict[str, Any]) -> FullCalibrationData:
+    """从已解析的校准 dict 构造 FullCalibrationData（供 replay 等自包含场景使用）。"""
     profiles = [
         CalibrationProfile(total_frames=p["total_frames"], pixel_map=p["pixel_map"])
         for p in raw["profiles"]
@@ -254,6 +254,11 @@ def load(filename: str) -> FullCalibrationData:
         screen_height=raw["screen_height"],
         calibration_time=raw.get("calibration_time", 0.0),
     )
+
+
+def load(filename: str) -> FullCalibrationData:
+    path = calibration_dir() / filename
+    return from_dict(json.loads(path.read_text(encoding="utf-8")))
 
 
 def list_files() -> list[str]:
