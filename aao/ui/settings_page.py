@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
@@ -31,7 +32,7 @@ from PySide6.QtWidgets import (
 
 from aao import __version__
 from aao.resources.syncer import sync_all
-from aao.resources.updater import UpdateChecker
+from aao.resources.updater import ReleaseInfo, UpdateChecker
 from aao.ui import theme
 from aao.ui.collapsible_box import CollapsibleBox
 from aao.ui.scrollbar_style import apply_themed_scrollbar
@@ -62,21 +63,38 @@ def save_settings(data: dict) -> None:
     p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _fmt_size(n: int) -> str:
+    """字节数 → 人话（如 12.3 MB）。"""
+    size: float = float(n)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.1f} {unit}".replace(".0 ", " ")
+        size /= 1024
+    return f"{size:.1f} GB"
+
+
 class _ResourceWorker(QObject):
-    """后台跑资源同步/更新检查。"""
+    """后台跑资源同步/更新检查/软件下载。"""
 
     log = Signal(str)
     finished_ok = Signal(str)  # 总结消息
     failed = Signal(str)
+    # check_update: 检查到有新版本时发 (ReleaseInfo)；无更新/失败走 finished_ok/failed
+    update_found = Signal(object)
+    # download: 字节进度 (downloaded, total)
+    download_progress = Signal(int, int)
+    # download: 下载成功，发 zip 路径；失败/取消走 finished_ok/failed
+    download_ready = Signal(object)
 
-    def __init__(self, mode: str):
+    def __init__(self, mode: str, info: Any = None):
         super().__init__()
-        self._mode = mode  # "sync" | "check_update" | "update_all"
-        # 取消信号：跨线程 Event，主线程 set() 即可让 sync_all 在阶段/文件间退出。
+        self._mode = mode  # "sync" | "check_update" | "download"
+        self._info = info  # download 模式: ReleaseInfo
+        # 取消信号：跨线程 Event，主线程 set() 即可让 sync_all/下载在检查点退出。
         self._cancel = threading.Event()
 
     def cancel(self) -> None:
-        """主线程调用：请求中止正在进行的同步。"""
+        """主线程调用：请求中止正在进行的同步/下载。"""
         self._cancel.set()
 
     def run(self) -> None:
@@ -96,18 +114,36 @@ class _ResourceWorker(QObject):
                     self.finished_ok.emit(summary)
             elif self._mode == "check_update":
                 self.log.emit("检查 GitHub 最新版本...")
-                has, ver, url = UpdateChecker().check_software()
-                if has:
-                    self.finished_ok.emit(f"发现新版本: v{ver}\n{url}")
+                info = UpdateChecker().check_software()
+                if info is None:
+                    self.finished_ok.emit("检查更新失败（网络错误）")
+                elif info.has_update:
+                    self.update_found.emit(info)
                 else:
                     self.finished_ok.emit(f"已是最新版本 (v{__version__})")
-            elif self._mode == "update_all":
-                result = UpdateChecker().update_all(progress_cb=lambda m: self.log.emit(m))
-                res_summary = "；".join(r.message for r in result["resources"])
-                if all(r.ok for r in result["resources"]):
-                    self.finished_ok.emit(f"软件检查 + 资源更新完成（{res_summary}）")
+            elif self._mode == "download":
+                info = self._info
+                if info is None or info.asset is None:
+                    self.failed.emit("无可下载的更新包")
+                    return
+                # 下载到 %TEMP%，文件名带版本避免混淆
+                import tempfile
+
+                dest = Path(tempfile.gettempdir()) / f"aao_update_v{info.version}.zip"
+                self.log.emit(f"下载更新包 v{info.version}…")
+
+                ok = UpdateChecker().download_update(
+                    info,
+                    dest,
+                    progress_cb=lambda d, t: self.download_progress.emit(d, t),
+                    cancel=self._cancel,
+                )
+                if self._cancel.is_set():
+                    self.finished_ok.emit("更新下载已取消")
+                elif ok:
+                    self.download_ready.emit(dest)
                 else:
-                    self.finished_ok.emit(res_summary)
+                    self.failed.emit("更新包下载失败（见日志）")
         except Exception as e:  # noqa: BLE001
             logger.exception("资源/更新操作失败")
             self.failed.emit(str(e))
@@ -160,6 +196,7 @@ class SettingsPage(QWidget):
         self._worker: _ResourceWorker | None = None
         self._thread: QThread | None = None
         self._res_mode: str | None = None  # 当前后台资源操作类型（用于取消按钮判断）
+        self._pending_update: ReleaseInfo | None = None  # 检查到的新版本（待下载）
         self._auto_preview_done = False
         self._collapsibles: dict[str, CollapsibleBox] = {}
         self._build_ui()
@@ -291,7 +328,11 @@ class SettingsPage(QWidget):
         self.cb_close_action.addItems(["每次询问", "最小化到托盘", "退出程序"])
         ui_form.addRow("关闭窗口时:", self.cb_close_action)
 
-        self._add_collapsible(root, "settings_software", "软件设置", ui_box, "主题 / 关闭行为")
+        self.cb_check_update_on_start = QCheckBox("启动时自动检查软件更新")
+        self.cb_check_update_on_start.setChecked(True)
+        ui_form.addRow("更新:", self.cb_check_update_on_start)
+
+        self._add_collapsible(root, "settings_software", "软件设置", ui_box, "主题 / 关闭 / 更新")
 
         # --- 背景图 ---
         bg_box = QGroupBox("背景图")
@@ -537,6 +578,7 @@ class SettingsPage(QWidget):
         self.chk_api.setChecked(s.get("api", True))
         close_map = {"": 0, "minimize": 1, "exit": 2}
         self.cb_close_action.setCurrentIndex(close_map.get(s.get("close_action", ""), 0))
+        self.cb_check_update_on_start.setChecked(s.get("check_update_on_start", True))
         if s.get("proxy"):
             self.edit_proxy.setText(str(s["proxy"]))
         if s.get("github_token_enc"):
@@ -562,6 +604,7 @@ class SettingsPage(QWidget):
                 "api": self.chk_api.isChecked(),
                 "proxy": self.edit_proxy.text().strip(),
                 "close_action": ["", "minimize", "exit"][self.cb_close_action.currentIndex()],
+                "check_update_on_start": self.cb_check_update_on_start.isChecked(),
             }
         )
         token = self.edit_github_token.text().strip()
@@ -580,25 +623,32 @@ class SettingsPage(QWidget):
         self.settings_changed.emit()
 
     def _on_sync_clicked(self) -> None:
-        """同步按钮：未在跑 → 启动同步；正在同步 → 请求取消。"""
-        if self._thread is not None and self._res_mode == "sync" and self._worker is not None:
+        """同步按钮：未在跑 → 启动同步；正在同步/下载 → 请求取消。"""
+        if (
+            self._thread is not None
+            and self._res_mode in ("sync", "download")
+            and self._worker is not None
+        ):
             self._worker.cancel()
             self.btn_sync.setText("取消中…")
             self.btn_sync.setEnabled(False)
             return
         self._run_resource("sync")
 
-    def _run_resource(self, mode: str) -> None:
+    def _run_resource(self, mode: str, info: ReleaseInfo | None = None) -> None:
         if self._thread is not None:
             self.lbl_op.setText("上一次操作还在进行中…")
             return
         self._res_mode = mode
         self.lbl_op.setText("进行中…")
-        self._worker = _ResourceWorker(mode)
+        self._worker = _ResourceWorker(mode, info=info)
         self._thread = QThread()
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.log.connect(self.lbl_op.setText)
+        self._worker.update_found.connect(self._on_update_found)
+        self._worker.download_progress.connect(self._on_download_progress)
+        self._worker.download_ready.connect(self._on_download_ready)
         self._worker.finished_ok.connect(self._on_res_done)
         self._worker.failed.connect(self._on_res_done)
         self._worker.finished_ok.connect(self._thread.quit)
@@ -608,9 +658,105 @@ class SettingsPage(QWidget):
             # 同步可取消：检查按钮禁用，同步按钮复用为取消入口。
             self.btn_check.setEnabled(False)
             self.btn_sync.setText("✕ 取消同步")
+        elif mode == "download":
+            # 下载可取消：检查按钮禁用，同步按钮复用为取消入口。
+            self.btn_check.setEnabled(False)
+            self.btn_sync.setText("✕ 取消下载")
         else:
             self._set_res_buttons(False)
         self._thread.start()
+
+    def _on_update_found(self, info: ReleaseInfo) -> None:
+        """check_update 发现新版本：弹窗询问是否立即更新。
+
+        源码模式（非 frozen）下自更新不适用——中转 bat 的 robocopy 布局针对
+        打包后的 aao.app/，对源码树会破坏 .git/aao 等目录。故源码模式只提示
+        用 git pull 更新，不进入下载流程。
+        """
+        from aao.utils.runtime_paths import is_frozen
+
+        self._pending_update = info
+
+        if not is_frozen():
+            box = QMessageBox(self)
+            box.setWindowTitle("发现新版本")
+            box.setIcon(QMessageBox.Icon.Information)
+            box.setText(
+                f"新版本 v{info.version} 已发布（当前 v{__version__}）。\n"
+                f"你正在从源码运行，自动更新不适用。\n"
+                f"请用 git pull && uv sync 更新代码与依赖。"
+            )
+            btn_open = box.addButton("打开 Release 页", QMessageBox.ButtonRole.AcceptRole)
+            box.addButton("关闭", QMessageBox.ButtonRole.RejectRole)
+            box.exec()
+            if box.clickedButton() is btn_open and info.html_url:
+                from PySide6.QtCore import QUrl
+                from PySide6.QtGui import QDesktopServices
+
+                QDesktopServices.openUrl(QUrl(info.html_url))
+            self.lbl_op.setText(f"新版本 v{info.version} 可用（源码模式：git pull 更新）")
+            return
+
+        asset_note = ""
+        if info.asset:
+            asset_note = f"\n大小: {_fmt_size(info.asset.size)}"
+        box = QMessageBox(self)
+        box.setWindowTitle("发现新版本")
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(
+            f"新版本 v{info.version} 已发布（当前 v{__version__}）。{asset_note}\n"
+            f"更新将下载完整安装包并替换当前版本（配置/校准/日志保留）。"
+        )
+        btn_now = box.addButton("立即更新", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("稍后", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is btn_now:
+            self._start_download()
+        else:
+            self.lbl_op.setText(f"新版本 v{info.version} 可用，点「检查更新」再试")
+
+    def _start_download(self) -> None:
+        info = self._pending_update
+        if info is None:
+            return
+        self._run_resource("download", info=info)
+
+    def _on_download_progress(self, downloaded: int, total: int) -> None:
+        if total > 0:
+            pct = downloaded * 100 // total
+            self.lbl_op.setText(f"下载更新包… {pct}%  ({_fmt_size(downloaded)}/{_fmt_size(total)})")
+        else:
+            self.lbl_op.setText(f"下载更新包… {_fmt_size(downloaded)}")
+
+    def _on_download_ready(self, zip_path: Path) -> None:
+        """下载完成：弹重启确认 → apply_update → 退出 app 让中转 bat 接管。"""
+        from aao.resources.updater import UpdateChecker
+
+        box = QMessageBox(self)
+        box.setWindowTitle("更新就绪")
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setText("更新包已下载完成。重启应用以完成安装？（配置/校准/日志会保留）")
+        btn_restart = box.addButton("重启并安装", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("稍后", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        if box.clickedButton() is not btn_restart:
+            self.lbl_op.setText("更新已下载，下次启动可手动安装")
+            return
+
+        # 生成中转 bat 并启动；随后退出当前进程，bat 等 exe 退出后替换+重启。
+        try:
+            UpdateChecker().apply_update(Path(zip_path))
+        except Exception as e:  # noqa: BLE001
+            logger.exception("启动自更新失败")
+            self.lbl_op.setText(f"启动更新失败: {e}")
+            return
+        logger.info("自更新中转已启动，退出主进程以完成安装")
+        # 触发真退出（绕过最小化到托盘的 close 偏好）
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
 
     def _on_res_done(self, msg: str) -> None:
         self.lbl_op.setText(msg)

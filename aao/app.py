@@ -26,12 +26,13 @@ if TYPE_CHECKING:
     from PySide6.QtGui import QCloseEvent
 
     from aao.core.timing.calibration import FullCalibrationData
+    from aao.resources.updater import ReleaseInfo
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from PySide6.QtCore import Qt, QThread, QTimer  # noqa: E402
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QHBoxLayout,
@@ -88,6 +89,28 @@ _PAGE_FARM = 0
 _PAGE_EDITOR = 1
 _PAGE_CALIB = 2
 _PAGE_SETTINGS = 3
+
+
+class _StartupUpdateChecker(QObject):
+    """启动时静默检查软件更新（后台线程，不打扰）。
+
+    有新版本则发 update_found(ReleaseInfo)；无更新/失败静默（只记日志）。
+    """
+
+    update_found = Signal(object)
+
+    def run(self) -> None:
+        try:
+            from aao.resources.updater import UpdateChecker
+
+            info = UpdateChecker().check_software()
+            if info is not None and info.has_update:
+                logger.info("启动检查：发现新版本 v%s", info.version)
+                self.update_found.emit(info)
+            elif info is not None:
+                logger.info("启动检查：已是最新 (v%s)", info.version)
+        except Exception:  # noqa: BLE001
+            logger.exception("启动更新检查失败")
 
 
 class MainWindow(QMainWindow):
@@ -173,6 +196,25 @@ class MainWindow(QMainWindow):
         self._apply_background(
             bg.get("background_image", ""), bg.get("background_opacity", 25) / 100.0
         )
+
+        # 启动时静默检查软件更新（可关）：有新版本则在标题栏挂角标。
+        self._latest_version: str | None = None  # 启动检查发现的新版本号（无则 None）
+        self._startup_check_thread: QThread | None = None
+        self._startup_check_worker: _StartupUpdateChecker | None = None
+        if bg.get("check_update_on_start", True):
+            self._startup_check_worker = _StartupUpdateChecker()
+            self._startup_check_thread = QThread()
+            self._startup_check_worker.moveToThread(self._startup_check_thread)
+            self._startup_check_thread.started.connect(self._startup_check_worker.run)
+            self._startup_check_worker.update_found.connect(self._on_startup_update_found)
+            self._startup_check_worker.update_found.connect(self._startup_check_thread.quit)
+            self._startup_check_thread.start()
+
+    def _on_startup_update_found(self, info: ReleaseInfo) -> None:
+        """启动检查发现新版本：标题栏挂角标提示（不弹窗，用户自行去设置页更新）。"""
+        self._latest_version = info.version
+        self.setWindowTitle(f"ArknightsAutoOperator  [有新版本 v{info.version}]")
+        logger.info("标题栏已标记新版本提示，前往设置页「检查更新」一键更新")
 
     # --- 新手引导 ---
 
@@ -543,13 +585,7 @@ class MainWindow(QMainWindow):
     def _quit_from_tray(self) -> None:
         """托盘「退出」：停所有 worker + 退出应用。"""
         self._force_quit = True
-        self.hotkey_timer.stop()
-        self.farm_page.stop_and_wait()
-        if self.worker is not None:
-            self.worker.stop()
-        if self.worker_thread is not None:
-            self.worker_thread.quit()
-            self.worker_thread.wait()
+        self._stop_workers()
         self.tray.hide()
         QApplication.quit()
 
@@ -566,6 +602,11 @@ class MainWindow(QMainWindow):
                 self._force_quit = True
             return
         # 真退出（_quit_from_tray 已做清理，或窗口在可见时被强制关闭）
+        self._stop_workers()
+        super().closeEvent(event)
+
+    def _stop_workers(self) -> None:
+        """停所有后台 worker/timer（真退出路径共用）。"""
         self.hotkey_timer.stop()
         self.farm_page.stop_and_wait()
         if self.worker is not None:
@@ -573,7 +614,9 @@ class MainWindow(QMainWindow):
         if self.worker_thread is not None:
             self.worker_thread.quit()
             self.worker_thread.wait()
-        super().closeEvent(event)
+        if self._startup_check_thread is not None:
+            self._startup_check_thread.quit()
+            self._startup_check_thread.wait()
 
 
 def _ensure_admin() -> None:
