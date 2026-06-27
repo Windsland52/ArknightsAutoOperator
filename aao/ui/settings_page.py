@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
@@ -71,17 +72,26 @@ class _ResourceWorker(QObject):
     def __init__(self, mode: str):
         super().__init__()
         self._mode = mode  # "sync" | "check_update" | "update_all"
+        # 取消信号：跨线程 Event，主线程 set() 即可让 sync_all 在阶段/文件间退出。
+        self._cancel = threading.Event()
+
+    def cancel(self) -> None:
+        """主线程调用：请求中止正在进行的同步。"""
+        self._cancel.set()
 
     def run(self) -> None:
         try:
             if self._mode == "sync":
                 self.log.emit("开始同步资源（干员名 + 地图）...")
-                results = sync_all()
+                results = sync_all(
+                    progress_cb=lambda m: self.log.emit(m),
+                    cancel=self._cancel,
+                )
                 summary = "；".join(r.message for r in results)
                 if all(r.ok for r in results):
                     self.finished_ok.emit(f"资源同步完成（{summary}）")
                 else:
-                    # 部分失败也走 finished_ok——结果消息里已包含失败信息，
+                    # 部分失败/取消也走 finished_ok——结果消息里已包含失败/取消信息，
                     # 这里不弹 failed 信号以免 UI 显示成" fatal exception"。
                     self.finished_ok.emit(summary)
             elif self._mode == "check_update":
@@ -149,6 +159,7 @@ class SettingsPage(QWidget):
         super().__init__()
         self._worker: _ResourceWorker | None = None
         self._thread: QThread | None = None
+        self._res_mode: str | None = None  # 当前后台资源操作类型（用于取消按钮判断）
         self._auto_preview_done = False
         self._collapsibles: dict[str, CollapsibleBox] = {}
         self._build_ui()
@@ -316,7 +327,7 @@ class SettingsPage(QWidget):
         self.btn_bg_pick.clicked.connect(self._on_bg_pick)
         self.btn_bg_clear.clicked.connect(self._on_bg_clear)
         self.slider_bg.valueChanged.connect(self._on_bg_opacity)
-        self.btn_sync.clicked.connect(lambda: self._run_resource("sync"))
+        self.btn_sync.clicked.connect(self._on_sync_clicked)
         self.btn_check.clicked.connect(lambda: self._run_resource("check_update"))
         self.btn_refresh_win.clicked.connect(self._refresh_windows)
         self.btn_preview.clicked.connect(self._preview_window)
@@ -568,11 +579,20 @@ class SettingsPage(QWidget):
         self.lbl_op.setText("设置已保存（端口/profile/代理/Token 变更需重启或下次同步生效）")
         self.settings_changed.emit()
 
+    def _on_sync_clicked(self) -> None:
+        """同步按钮：未在跑 → 启动同步；正在同步 → 请求取消。"""
+        if self._thread is not None and self._res_mode == "sync" and self._worker is not None:
+            self._worker.cancel()
+            self.btn_sync.setText("取消中…")
+            self.btn_sync.setEnabled(False)
+            return
+        self._run_resource("sync")
+
     def _run_resource(self, mode: str) -> None:
         if self._thread is not None:
             self.lbl_op.setText("上一次操作还在进行中…")
             return
-        self._set_res_buttons(False)
+        self._res_mode = mode
         self.lbl_op.setText("进行中…")
         self._worker = _ResourceWorker(mode)
         self._thread = QThread()
@@ -584,11 +604,18 @@ class SettingsPage(QWidget):
         self._worker.finished_ok.connect(self._thread.quit)
         self._worker.failed.connect(self._thread.quit)
         self._thread.finished.connect(self._cleanup_thread)
+        if mode == "sync":
+            # 同步可取消：检查按钮禁用，同步按钮复用为取消入口。
+            self.btn_check.setEnabled(False)
+            self.btn_sync.setText("✕ 取消同步")
+        else:
+            self._set_res_buttons(False)
         self._thread.start()
 
     def _on_res_done(self, msg: str) -> None:
         self.lbl_op.setText(msg)
         self._set_res_buttons(True)
+        self.btn_sync.setText("🔄 同步资源")
         self.lbl_res_status.setText(self._res_status_text())
 
     def _set_res_buttons(self, enabled: bool) -> None:
@@ -600,3 +627,4 @@ class SettingsPage(QWidget):
             self._thread.wait()
         self._worker = None
         self._thread = None
+        self._res_mode = None

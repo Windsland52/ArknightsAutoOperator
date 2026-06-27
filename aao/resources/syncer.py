@@ -15,8 +15,11 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,10 +40,16 @@ class SyncResult:
     failed: int = 0  # 显式失败条目数
     skipped: int = 0  # 已是最新被跳过的条目数
     error: str = ""  # 致命错误描述（fatal 时填）
+    cancelled: bool = False  # 被外部取消
 
     @property
     def message(self) -> str:
         """供 UI 进度回调使用的人话汇报。"""
+        if self.cancelled:
+            base = f"{self.name}已取消"
+            if self.done > 0:
+                base += f"（已下载 {self.done} 条）"
+            return base
         if self.error:
             return f"{self.name}更新失败：{self.error}"
         if self.failed == 0:
@@ -50,6 +59,11 @@ class SyncResult:
                 return f"{self.name}更新完成（新 {self.done} 条，已最新 {self.skipped} 条）"
             return f"{self.name}更新完成（{self.done} 条）"
         return f"{self.name}部分失败（成功 {self.done}，失败 {self.failed}）"
+
+
+def _cancelled(cancel: threading.Event | None) -> bool:
+    """统一的取消信号检查（cancel=None 视为永不取消）。"""
+    return cancel is not None and cancel.is_set()
 
 
 # 主源：GitHub dev-v2 分支（main 分支改名而来）
@@ -112,20 +126,68 @@ def _make_request(url: str, token: str | None = None) -> urllib.request.Request:
     return req
 
 
+_DOWNLOAD_RETRIES = 3
+_DOWNLOAD_BACKOFF_SEC = 0.5
+
+
+def _fetch_json(
+    opener: urllib.request.OpenerDirector,
+    url: str,
+    *,
+    token: str | None = None,
+    timeout: int = 60,
+) -> dict[str, Any] | None:
+    """带重试的 GET + JSON 解析，用于关键 API 调用（git/trees）。
+
+    单文件下载用 _download（落盘）；这里只拉一份 JSON 进内存。
+    关键 API 抖动一次就整段同步失败不划算，套同样 3 次重试退避。
+    """
+    last_err: Exception | None = None
+    for attempt in range(1, _DOWNLOAD_RETRIES + 1):
+        try:
+            with opener.open(_make_request(url, token), timeout=timeout) as resp:
+                return json.loads(resp.read())
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            if attempt < _DOWNLOAD_RETRIES:
+                time.sleep(_DOWNLOAD_BACKOFF_SEC * attempt)
+                continue
+            logger.error("拉取失败（%d 次重试均失败） %s: %s", _DOWNLOAD_RETRIES, url, e)
+            return None
+    assert last_err is not None  # 循环必 return，防御
+    return None
+
+
 def _download(
     opener: urllib.request.OpenerDirector, url: str, dest: Path, token: str | None = None
 ) -> bool:
-    try:
-        with opener.open(_make_request(url, token), timeout=30) as resp:
-            data = resp.read()
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        tmp = dest.with_suffix(dest.suffix + ".tmp")
-        tmp.write_bytes(data)
-        tmp.replace(dest)
-        return True
-    except Exception as e:  # noqa: BLE001
-        logger.warning("下载失败 %s: %s", url, e)
-        return False
+    """带重试的单文件下载。
+
+    CDN 暂时抖动 / TLS timeout 不至于让一个文件永远漏掉：
+    失败重试最多 3 次，间隔 500ms 退避。
+    成功即刻返回；3 次全失败才返回 False，由上层记录 manifest 不动、下次再补。
+    """
+    last_err: Exception | None = None
+    for attempt in range(1, _DOWNLOAD_RETRIES + 1):
+        try:
+            with opener.open(_make_request(url, token), timeout=30) as resp:
+                data = resp.read()
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            tmp = dest.with_suffix(dest.suffix + ".tmp")
+            tmp.write_bytes(data)
+            tmp.replace(dest)
+            return True
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            if attempt < _DOWNLOAD_RETRIES:
+                time.sleep(_DOWNLOAD_BACKOFF_SEC * attempt)
+                continue
+            logger.warning("下载失败（%d 次重试均失败） %s: %s", _DOWNLOAD_RETRIES, url, e)
+            return False
+    # 理论不可达（循环必 return），但满足类型检查 + 防御。
+    assert last_err is not None
+    logger.warning("下载失败 %s: %s", url, last_err)
+    return False
 
 
 def _list_remote_tiles(
@@ -143,11 +205,8 @@ def _list_remote_tiles(
     blob sha 与 Contents API sha 一致，可直接沿用同一份 manifest。
     """
     logger.info("从 GitHub git/trees 拉取 dev-v2 完整树...")
-    try:
-        with opener.open(_make_request(_TREES_API, token), timeout=60) as resp:
-            data = json.loads(resp.read())
-    except Exception as e:  # noqa: BLE001
-        logger.error("拉取 git/trees 失败: %s", e)
+    data = _fetch_json(opener, _TREES_API, token=token, timeout=60)
+    if data is None:
         return None
 
     if data.get("truncated"):
@@ -198,9 +257,12 @@ def _get_battle_data(
         tmp.unlink(missing_ok=True)
 
 
-def sync_operators(proxy: str | None = None) -> SyncResult:
+def sync_operators(proxy: str | None = None, cancel: threading.Event | None = None) -> SyncResult:
     data_dir = project_root() / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
+
+    if _cancelled(cancel):
+        return SyncResult(ok=False, name="干员名", cancelled=True)
 
     opener = _make_opener(proxy or _settings_proxy())
     token = _settings_github_token()
@@ -283,10 +345,17 @@ def _rebuild_level_codes(map_dir: Path) -> int:
     return len(codes)
 
 
-def sync_maps(proxy: str | None = None) -> SyncResult:
+def sync_maps(
+    proxy: str | None = None,
+    progress_cb: Callable[[str], None] | None = None,
+    cancel: threading.Event | None = None,
+) -> SyncResult:
     data_dir = project_root() / "data"
     map_dir = data_dir / "map"
     map_dir.mkdir(parents=True, exist_ok=True)
+
+    if _cancelled(cancel):
+        return SyncResult(ok=False, name="地图", cancelled=True)
 
     # 1. 先扫盘生成 level_codes.json —— 即便下载从未成功，运行期也能用已落盘的旧地图。
     pre_codes = _rebuild_level_codes(map_dir)
@@ -295,7 +364,9 @@ def sync_maps(proxy: str | None = None) -> SyncResult:
     # 2. 增量下载（基于 git/trees blob sha）。
     opener = _make_opener(proxy or _settings_proxy())
     token = _settings_github_token()
-    result = _download_maps_remote(map_dir, opener, token=token)
+    result = _download_maps_remote(
+        map_dir, opener, token=token, progress_cb=progress_cb, cancel=cancel
+    )
 
     # 3. 下载完成后再扫一次，把新关卡也写进 level_codes.json。
     post_codes = _rebuild_level_codes(map_dir)
@@ -314,6 +385,8 @@ def sync_maps(proxy: str | None = None) -> SyncResult:
         failed,
         post_codes,
     )
+    if _cancelled(cancel):
+        return SyncResult(ok=False, name="地图", cancelled=True, done=done, skipped=skipped)
     return SyncResult(
         ok=failed == 0,
         name="地图",
@@ -334,7 +407,11 @@ def _load_manifest(path: Path) -> dict[str, str]:
 
 
 def _download_maps_remote(
-    dst_dir: Path, opener: urllib.request.OpenerDirector, token: str | None = None
+    dst_dir: Path,
+    opener: urllib.request.OpenerDirector,
+    token: str | None = None,
+    progress_cb: Callable[[str], None] | None = None,
+    cancel: threading.Event | None = None,
 ) -> tuple[int, int, int] | None:
     """从 GitHub 下载地图文件（增量：基于 git/trees blob sha）。
 
@@ -343,6 +420,11 @@ def _download_maps_remote(
     - 文件存在且 sha 与远端一致 → 跳过
     - sha 变化或缺失 → 并发下载 raw URL
     失败的不更新 manifest sha，下次重试。
+
+    cancel 被置位时：停止派发新完成的 future、立即返回（已提交的小文件下载
+    让池自然跑完，不阻塞调用方），已落盘的 manifest 进度保留供下次续传。
+
+    progress_cb 在下载期间被周期性回调（"地图 N/M"）。
 
     Returns:
         (ready, done, failed) 或 None（git/trees 拉取失败）。
@@ -383,13 +465,21 @@ def _download_maps_remote(
     done = 0
     failed = 0
     if tasks:
-        logger.info("地图增量下载: %d 个需更新 / %d 个总文件", len(tasks), ready + len(tasks))
-        with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
+        total = len(tasks)
+        logger.info("地图增量下载: %d 个需更新 / %d 个总文件", total, ready + total)
+        if progress_cb:
+            progress_cb(f"地图 0/{total}")
+        # 不用 with：取消时 shutdown(wait=False, cancel_futures=True) 立即返回，
+        # 不阻塞调用方等已派发的小文件下载跑完。
+        pool = ThreadPoolExecutor(max_workers=_MAX_WORKERS)
+        try:
             futs = {
                 pool.submit(_download, opener, url, dst, token): (name, sha)
                 for name, url, dst, sha in tasks
             }
             for fut in as_completed(futs):
+                if _cancelled(cancel):
+                    break
                 name, sha = futs[fut]
                 if fut.result():
                     ready += 1
@@ -398,9 +488,17 @@ def _download_maps_remote(
                     # chunked commit：每 100 个落盘一次，被中断也不丢进度。
                     if done % 100 == 0:
                         _commit_manifest()
-                        logger.info("地图下载进度: %d/%d", done, len(tasks))
+                    if progress_cb and (done % 50 == 0 or done == total):
+                        progress_cb(f"地图 {done}/{total}")
                 else:
                     failed += 1
+        finally:
+            # 取消：丢弃排队未启动的 future，不等正在跑的（小文件下载让其自然结束）。
+            # 正常结束：等所有 future 跑完再退出，避免遗留线程。
+            if _cancelled(cancel):
+                pool.shutdown(wait=False, cancel_futures=True)
+            else:
+                pool.shutdown(wait=True)
     else:
         logger.info("地图数据已是最新（%d 文件）", ready)
 
@@ -408,12 +506,36 @@ def _download_maps_remote(
     return ready, done, failed
 
 
-def sync_all(proxy: str | None = None) -> list[SyncResult]:
-    """同步干员名 + 地图。返回每一步的 SyncResult，调用方可据此汇报。"""
+def sync_all(
+    proxy: str | None = None,
+    progress_cb: Callable[[str], None] | None = None,
+    cancel: threading.Event | None = None,
+) -> list[SyncResult]:
+    """同步干员名 + 地图。返回每一步的 SyncResult，调用方可据此汇报。
+
+    progress_cb 用于阶段 + 地图逐文件进度；cancel 置位后尽快在阶段/文件间退出。
+    """
     logger.info("资源同步（远程）...")
-    results = [sync_operators(proxy=proxy), sync_maps(proxy=proxy)]
+    results: list[SyncResult] = []
+
+    if _cancelled(cancel):
+        results.append(SyncResult(ok=False, name="干员名", cancelled=True))
+    else:
+        if progress_cb:
+            progress_cb("干员名…")
+        results.append(sync_operators(proxy=proxy, cancel=cancel))
+
+    if _cancelled(cancel):
+        results.append(SyncResult(ok=False, name="地图", cancelled=True))
+    else:
+        if progress_cb:
+            progress_cb("地图…")
+        results.append(sync_maps(proxy=proxy, progress_cb=progress_cb, cancel=cancel))
+
     if all(r.ok for r in results):
         logger.info("资源同步完成")
+    elif any(r.cancelled for r in results):
+        logger.info("资源同步已取消")
     else:
         failed_steps = [r.name for r in results if not r.ok]
         logger.warning("资源同步部分失败: %s", ", ".join(failed_steps))
