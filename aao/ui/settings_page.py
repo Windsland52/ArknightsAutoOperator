@@ -76,8 +76,14 @@ class _ResourceWorker(QObject):
         try:
             if self._mode == "sync":
                 self.log.emit("开始同步资源（干员名 + 地图）...")
-                sync_all()
-                self.finished_ok.emit("资源同步完成")
+                results = sync_all()
+                summary = "；".join(r.message for r in results)
+                if all(r.ok for r in results):
+                    self.finished_ok.emit(f"资源同步完成（{summary}）")
+                else:
+                    # 部分失败也走 finished_ok——结果消息里已包含失败信息，
+                    # 这里不弹 failed 信号以免 UI 显示成" fatal exception"。
+                    self.finished_ok.emit(summary)
             elif self._mode == "check_update":
                 self.log.emit("检查 GitHub 最新版本...")
                 has, ver, url = UpdateChecker().check_software()
@@ -86,8 +92,12 @@ class _ResourceWorker(QObject):
                 else:
                     self.finished_ok.emit(f"已是最新版本 (v{__version__})")
             elif self._mode == "update_all":
-                UpdateChecker().update_all(progress_cb=lambda m: self.log.emit(m))
-                self.finished_ok.emit("软件检查 + 资源更新完成")
+                result = UpdateChecker().update_all(progress_cb=lambda m: self.log.emit(m))
+                res_summary = "；".join(r.message for r in result["resources"])
+                if all(r.ok for r in result["resources"]):
+                    self.finished_ok.emit(f"软件检查 + 资源更新完成（{res_summary}）")
+                else:
+                    self.finished_ok.emit(res_summary)
         except Exception as e:  # noqa: BLE001
             logger.exception("资源/更新操作失败")
             self.failed.emit(str(e))

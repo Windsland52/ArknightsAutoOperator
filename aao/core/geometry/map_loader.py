@@ -1,6 +1,6 @@
 """关卡地图数据加载。
 
-数据来源：MaaAssistantArknights/resource/Arknights-Tile-Pos/*.json
+数据来源：data/map/*.json（由 aao.resources.syncer 从 MaaAssistantArknights GitHub 同步）。
 文件名格式：{code}-{type}-level_{stageId}.json，如 main_01-07-obt-main-level_main_01-07.json
 
 用户输入的代号（如 "1-7"）通过 level_codes.json 映射到实际文件名。
@@ -15,14 +15,9 @@ from aao.utils.logger import logger
 from aao.utils.runtime_paths import project_root
 
 
-def _map_dirs() -> list[Path]:
-    """地图数据搜索路径（优先 data/map，回退 ../MaaAssistantArknights）。"""
-    root = project_root()
-    dirs = [
-        root / "data" / "map",
-        Path("../MaaAssistantArknights/resource/Arknights-Tile-Pos"),
-    ]
-    return [d for d in dirs if d.exists()]
+def _map_dir() -> Path:
+    """地图数据目录。单一来源：syncer 同步到的 data/map。"""
+    return project_root() / "data" / "map"
 
 
 def _level_codes() -> dict[str, str]:
@@ -38,20 +33,21 @@ def find_map_file(code: str) -> Path | None:
 
     优先用 level_codes.json 映射；回退到 glob 精确匹配。
     """
+    d = _map_dir()
+    if not d.exists():
+        return None
+
     # 1. 通过 level_codes 映射
     codes = _level_codes()
     if code in codes:
-        filename = codes[code]
-        for d in _map_dirs():
-            p = d / filename
-            if p.exists():
-                return p
+        p = d / codes[code]
+        if p.exists():
+            return p
 
     # 2. glob 精确前缀匹配（如 code 本身就是文件名前缀 main_01-07）
-    for d in _map_dirs():
-        for p in d.glob(f"{code}-*.json"):
-            if "#f#" not in p.name:
-                return p
+    for p in d.glob(f"{code}-*.json"):
+        if "#f#" not in p.name:
+            return p
 
     return None
 
