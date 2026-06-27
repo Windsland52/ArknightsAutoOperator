@@ -18,11 +18,34 @@ import json
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from aao.utils.logger import logger, setup_logging
 from aao.utils.runtime_paths import project_root
+
+
+@dataclass(frozen=True, slots=True)
+class SyncResult:
+    """一次同步的结构化结果，调用方可据此如实汇报成败。"""
+
+    ok: bool
+    name: str  # "干员名" / "地图"
+    total: int = 0  # 远端拿到的条目数（operators 为 0 或 1，maps 为 trees tile 数）
+    done: int = 0  # 成功条目数
+    failed: int = 0  # 显式失败条目数
+    skipped: int = 0  # 已是最新被跳过的条目数
+    error: str = ""  # 致命错误描述（fatal 时填）
+
+    @property
+    def message(self) -> str:
+        """供 UI 进度回调使用的人话汇报。"""
+        if self.error:
+            return f"{self.name}更新失败：{self.error}"
+        if self.failed == 0:
+            return f"{self.name}更新完成（{self.done} 条）"
+        return f"{self.name}部分失败（成功 {self.done}，失败 {self.failed}）"
 
 # 主源：GitHub dev-v2 分支（main 分支改名而来）
 _REPO = "MaaAssistantArknights/MaaAssistantArknights"
@@ -153,16 +176,24 @@ def _list_remote_tiles(
 def _get_battle_data(
     opener: urllib.request.OpenerDirector, token: str | None = None
 ) -> dict[str, Any] | None:
-    """从 GitHub 下载 battle_data.json。"""
+    """从 GitHub 下载 battle_data.json。
+
+    下载到 data/.battle_data.json 后立即读出解析、并删掉临时文件，
+    避免每次 sync_operators 都留一个 550 KB 临时 dump 进 data/ 影响发版包体积。
+    """
     logger.info("从 GitHub 下载 battle_data.json...")
     tmp = project_root() / "data" / ".battle_data.json"
     tmp.parent.mkdir(parents=True, exist_ok=True)
-    if _download(opener, _BATTLE_DATA_REMOTE, tmp, token=token):
+    if not _download(opener, _BATTLE_DATA_REMOTE, tmp, token=token):
+        tmp.unlink(missing_ok=True)
+        return None
+    try:
         return json.loads(tmp.read_text(encoding="utf-8"))
-    return None
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
-def sync_operators(proxy: str | None = None) -> None:
+def sync_operators(proxy: str | None = None) -> SyncResult:
     data_dir = project_root() / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -171,7 +202,7 @@ def sync_operators(proxy: str | None = None) -> None:
     raw = _get_battle_data(opener, token=token)
     if raw is None:
         logger.error("无法获取 battle_data.json")
-        return
+        return SyncResult(ok=False, name="干员名", error="无法获取 battle_data.json")
 
     chars = raw.get("chars", {})
     mapping: dict[str, str] = {}
@@ -198,6 +229,13 @@ def sync_operators(proxy: str | None = None) -> None:
         json.dumps(names, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     logger.info("干员数据: %d 名", len(names))
+    return SyncResult(
+        ok=True,
+        name="干员名",
+        total=len(chars),
+        done=len(names),
+        skipped=len(chars) - len(names),
+    )
 
 
 def rebuild_level_codes() -> int:
@@ -240,7 +278,7 @@ def _rebuild_level_codes(map_dir: Path) -> int:
     return len(codes)
 
 
-def sync_maps(proxy: str | None = None) -> None:
+def sync_maps(proxy: str | None = None) -> SyncResult:
     data_dir = project_root() / "data"
     map_dir = data_dir / "map"
     map_dir.mkdir(parents=True, exist_ok=True)
@@ -252,11 +290,25 @@ def sync_maps(proxy: str | None = None) -> None:
     # 2. 增量下载（基于 git/trees blob sha）。
     opener = _make_opener(proxy or _settings_proxy())
     token = _settings_github_token()
-    count = _download_maps_remote(map_dir, opener, token=token)
+    result = _download_maps_remote(map_dir, opener, token=token)
 
     # 3. 下载完成后再扫一次，把新关卡也写进 level_codes.json。
     post_codes = _rebuild_level_codes(map_dir)
-    logger.info("地图数据: %d 文件, level_codes=%d 关", count, post_codes)
+
+    if result is None:
+        logger.error("无法拉取 git/trees，地图数据未更新")
+        return SyncResult(ok=False, name="地图", error="无法拉取 git/trees")
+
+    ready, done, failed = result
+    logger.info("地图数据: ready=%d done=%d failed=%d, level_codes=%d 关", ready, done, failed, post_codes)
+    return SyncResult(
+        ok=failed == 0,
+        name="地图",
+        total=ready + failed,
+        done=ready,
+        failed=failed,
+        skipped=ready - done,
+    )
 
 
 def _load_manifest(path: Path) -> dict[str, str]:
@@ -270,7 +322,7 @@ def _load_manifest(path: Path) -> dict[str, str]:
 
 def _download_maps_remote(
     dst_dir: Path, opener: urllib.request.OpenerDirector, token: str | None = None
-) -> int:
+) -> tuple[int, int, int] | None:
     """从 GitHub 下载地图文件（增量：基于 git/trees blob sha）。
 
     git/trees 一次拉完整分支树；Arknights-Tile-Pos 子树下每个 .json blob 的 sha
@@ -278,10 +330,16 @@ def _download_maps_remote(
     - 文件存在且 sha 与远端一致 → 跳过
     - sha 变化或缺失 → 并发下载 raw URL
     失败的不更新 manifest sha，下次重试。
+
+    Returns:
+        (ready, done, failed) 或 None（git/trees 拉取失败）。
+        ready = 下载/已是最新成功的累计。
+        done  = 本次实际新下载成功的数量。
+        failed = 本次尝试下载但失败的数量。
     """
     files = _list_remote_tiles(opener, token)
     if files is None:
-        return 0
+        return None
 
     manifest_path = dst_dir / _MAP_MANIFEST
     manifest = _load_manifest(manifest_path)
@@ -309,9 +367,10 @@ def _download_maps_remote(
         }
         manifest_path.write_text(json.dumps(saved, indent=2, ensure_ascii=False), encoding="utf-8")
 
+    done = 0
+    failed = 0
     if tasks:
         logger.info("地图增量下载: %d 个需更新 / %d 个总文件", len(tasks), ready + len(tasks))
-        done = 0
         with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
             futs = {
                 pool.submit(_download, opener, url, dst, token): (name, sha)
@@ -327,18 +386,25 @@ def _download_maps_remote(
                     if done % 100 == 0:
                         _commit_manifest()
                         logger.info("地图下载进度: %d/%d", done, len(tasks))
+                else:
+                    failed += 1
     else:
         logger.info("地图数据已是最新（%d 文件）", ready)
 
     _commit_manifest()
-    return ready
+    return ready, done, failed
 
 
-def sync_all(proxy: str | None = None) -> None:
+def sync_all(proxy: str | None = None) -> list[SyncResult]:
+    """同步干员名 + 地图。返回每一步的 SyncResult，调用方可据此汇报。"""
     logger.info("资源同步（远程）...")
-    sync_operators(proxy=proxy)
-    sync_maps(proxy=proxy)
-    logger.info("资源同步完成")
+    results = [sync_operators(proxy=proxy), sync_maps(proxy=proxy)]
+    if all(r.ok for r in results):
+        logger.info("资源同步完成")
+    else:
+        failed_steps = [r.name for r in results if not r.ok]
+        logger.warning("资源同步部分失败: %s", ", ".join(failed_steps))
+    return results
 
 
 if __name__ == "__main__":
@@ -360,8 +426,11 @@ if __name__ == "__main__":
         n = rebuild_level_codes()
         print(f"level_codes.json: {n} 关")
     elif args.operators:
-        sync_operators(proxy=args.proxy)
+        r = sync_operators(proxy=args.proxy)
+        print(r.message)
     elif args.maps:
-        sync_maps(proxy=args.proxy)
+        r = sync_maps(proxy=args.proxy)
+        print(r.message)
     else:
-        sync_all(proxy=args.proxy)
+        for r in sync_all(proxy=args.proxy):
+            print(r.message)

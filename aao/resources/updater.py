@@ -61,30 +61,37 @@ class UpdateChecker:
     def update_resources(
         self,
         progress_cb: Callable[[str], None] | None = None,
-    ) -> None:
+    ) -> list[syncer.SyncResult]:
         """从远程更新全部资源（干员名 + 地图）。
+
+        失败不再被吞：每步的 SyncResult 都返回，调用方可据此如实汇报。
+        即便某步失败也继续后续步骤（部分同步好过完全不同步）。
 
         Args:
             progress_cb: 可选进度回调 (message: str) -> None。
-        """
-        steps = [
-            ("干员名", lambda: syncer.sync_operators()),
-            ("地图", lambda: syncer.sync_maps()),
-        ]
 
+        Returns:
+            每一步的 SyncResult。`all(r.ok)` 为完全成功。
+        """
+        steps: list[tuple[str, Callable[[], syncer.SyncResult]]] = [
+            ("干员名", syncer.sync_operators),
+            ("地图", syncer.sync_maps),
+        ]
+        results: list[syncer.SyncResult] = []
         for name, fn in steps:
             if progress_cb:
                 progress_cb(f"正在更新{name}...")
-            fn()
-
-        if progress_cb:
-            progress_cb("资源更新完成")
+            r = fn()
+            results.append(r)
+            if progress_cb:
+                progress_cb(r.message)
+        return results
 
     def update_all(self, progress_cb: Callable[[str], None] | None = None) -> dict:
         """检查软件更新 + 更新资源。
 
         Returns:
-            {"software": (has_update, version, url), "resources": "done"}
+            {"software": (has_update, version, url), "resources": [SyncResult]}
         """
         result: dict = {}
 
@@ -92,9 +99,7 @@ class UpdateChecker:
             progress_cb("检查软件更新...")
         result["software"] = self.check_software()
 
-        self.update_resources(progress_cb=progress_cb)
-        result["resources"] = "done"
-
+        result["resources"] = self.update_resources(progress_cb=progress_cb)
         return result
 
 
@@ -129,9 +134,17 @@ if __name__ == "__main__":
             print(f"发现新版本: {ver}")
             print(f"下载: {url}")
     elif args.resources:
-        checker.update_resources()
+        for r in checker.update_resources():
+            print(r.message)
     elif args.all:
         result = checker.update_all()
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        sw = result["software"]
+        if sw[0]:
+            print(f"发现新版本: {sw[1]}")
+            print(f"下载: {sw[2]}")
+        else:
+            print(f"软件已是最新版本 (v{__version__})")
+        for r in result["resources"]:
+            print(r.message)
     else:
         parser.print_help()
