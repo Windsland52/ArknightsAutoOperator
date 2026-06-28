@@ -13,10 +13,13 @@
         "check:schema": "node tools/validate-schema.mjs",
         "sync:schema": "node tools/sync-schema.mjs",
         "check": "pnpm format:check && pnpm check:schema",
+        "ci": "pnpm check && pnpm check:py",
         "format:py": "uv run ruff format .",
         "lint:py": "uv run ruff check .",
         "typecheck:py": "uv run pyright",
-        "check:py": "pnpm lint:py && pnpm typecheck:py"
+        "test:py": "uv run pytest tests/ -q",
+        "check:py:fast": "pnpm lint:py && pnpm typecheck:py",
+        "check:py": "pnpm check:py:fast && pnpm test:py"
     },
     "devDependencies": {
         "@nekosu/prettier-plugin-maafw-sort": "1.0.5",

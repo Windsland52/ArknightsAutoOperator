@@ -1,24 +1,10 @@
 name: Package Check
 
-# 每次 commit（push 改动打包相关文件）模拟完整打包：构建 + 冒烟验 PKG + 上传 artifact。
-# 不发版、不打 tag。尽早发现打包问题（PKG 损坏、CI 环境差异）。
-# 代码 lint/format 检查见 check.yml（轻量），本 workflow 只管打包。
-
 on:
-    push:
+    workflow_run:
+        workflows: [Check]
+        types: [completed]
         branches: [main, master]
-        paths:
-            - 'aao/**'
-            - 'custom/**'
-            - 'resource/**'
-            - 'examples/**'
-            - 'aao.spec'
-            - 'pyproject.toml'
-            - 'uv.lock'
-            - 'package.json'
-            - 'pnpm-lock.yaml'
-            - 'logo.png'
-            - '.github/workflows/package-check.yml'
     workflow_dispatch:
 
 concurrency:
@@ -26,75 +12,31 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
-    package-check:
-        runs-on: windows-latest
+    paths-filter:
+        runs-on: ubuntu-latest
+        outputs:
+            packaging: ${{ steps.filter.outputs.packaging }}
         steps:
             - uses: actions/checkout@v6
               with:
-                  submodules: true # 拉取 MaaCommonAssets（OCR 模型来源）
-            - uses: actions/setup-python@v6
-              with:
-                  python-version: '3.13'
-            - uses: astral-sh/setup-uv@v8.1.0
-            - uses: pnpm/action-setup@v6
-            - uses: actions/setup-node@v6
-              with:
-                  node-version: 24
-                  cache: pnpm
-            - run: pnpm install --frozen-lockfile
-            - run: uv sync
-            - run: pnpm check
-            - run: pnpm check:py
-            - name: Disable Windows Defender realtime monitoring
-              shell: powershell
-              run: |
-                  Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
-                  Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE" -ErrorAction SilentlyContinue
-                  Write-Host "Defender realtime monitoring disabled for build"
-            - name: Configure OCR model
-              run: uv run python tools/configure.py
-            - name: Convert logo.png to ico
-              shell: bash
-              run: uv run python -c "from PIL import Image; Image.open('logo.png').save('logo.ico', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])"
-            - name: Build (PyInstaller)
-              run: uv run pyinstaller aao.spec --noconfirm
-            - name: Smoke test packaged exe
+                  fetch-depth: 2
+                  ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+            - id: filter
               shell: bash
               run: |
-                  export QT_QPA_PLATFORM=offscreen
-                  timeout 20 ./dist/aao.app/aao.app.exe --no-api > smoke.log 2>&1 || true
-                  if grep -q "Could not load PyInstaller" smoke.log; then
-                    echo "[ERR] packaged exe failed to load PKG archive"
-                    cat smoke.log
-                    exit 1
+                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+                    echo "packaging=true" >> "$GITHUB_OUTPUT"
+                  elif git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -qE '^(aao/|custom/|resource/|examples/|aao\.spec|pyproject\.toml|uv\.lock|package\.json|pnpm-lock\.yaml|logo\.png|\.github/workflows/(package-check|_build)\.yml)'; then
+                    echo "packaging=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "packaging=false" >> "$GITHUB_OUTPUT"
+                    echo "No packaging files changed, skipping build"
                   fi
-                  echo "[OK] packaged exe loads PKG archive"
-                  head -5 smoke.log
-            - name: Download AFA (ArknightsFrameAssistant)
-              shell: bash
-              run: |
-                  mkdir -p dist/aao.app/afa
-                  repo="CloudTracey/arknights-frame-assistant"
-                  tag="$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
-                  echo "AFA latest tag: $tag"
-                  curl -fsSL "https://github.com/$repo/releases/download/$tag/AFA.exe" -o dist/aao.app/afa/AFA.exe
-                  curl -fsSL "https://raw.githubusercontent.com/$repo/$tag/LICENSE" -o dist/aao.app/afa/LICENSE || echo "[WARN] AFA LICENSE 未取到"
-            - name: Sync game data
-              run: uv run python -m aao.resources.syncer
-            - name: Stage external resources
-              shell: bash
-              run: |
-                  cp -r resource data examples dist/aao.app/
-                  cp logo.png dist/aao.app/
-                  rm -rf dist/aao.app/config dist/aao.app/debug
-            - name: Package
-              shell: bash
-              run: |
-                  archive="ArknightsAutoOperator-check-${GITHUB_SHA::7}.zip"
-                  ( cd dist/aao.app && 7z a "../../$archive" . )
-            - uses: actions/upload-artifact@v7
-              with:
-                  name: check-build
-                  path: |
-                      *.zip
-                      dist/aao.app
+
+    build:
+        needs: paths-filter
+        if: ${{ needs.paths-filter.outputs.packaging == 'true' && (github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch') }}
+        uses: ./.github/workflows/_build.yml
+        with:
+            artifact_name: check-build
+            archive_prefix: ArknightsAutoOperator-check-${{ github.event.workflow_run.head_sha || github.sha }}

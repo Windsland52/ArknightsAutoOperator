@@ -12,6 +12,7 @@ jobs:
         runs-on: windows-latest
         steps:
             - uses: actions/checkout@v6
+            # NOTE: python/node/uv versions must stay in sync with _build.yml
             - uses: actions/setup-python@v6
               with:
                   python-version: '3.13'
@@ -23,6 +24,9 @@ jobs:
                   cache: pnpm
             - run: pnpm install --frozen-lockfile
             - run: uv sync
-            - run: pnpm check
-            - run: pnpm check:py
-            - run: uv run pytest tests/ -q
+            - name: Format & schema
+              run: pnpm check
+            - name: Lint & typecheck
+              run: pnpm check:py:fast
+            - name: Tests
+              run: pnpm test:py
