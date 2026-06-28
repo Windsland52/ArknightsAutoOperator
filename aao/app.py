@@ -211,10 +211,34 @@ class MainWindow(QMainWindow):
             self._startup_check_thread.start()
 
     def _on_startup_update_found(self, info: ReleaseInfo) -> None:
-        """启动检查发现新版本：标题栏挂角标提示（不弹窗，用户自行去设置页更新）。"""
+        """启动检查发现新版本：标题栏挂角标 + 弹更新公告（参考 AFA ChangelogUI）。
+
+        用户可在公告里勾「不再提醒此版本」，持久化到 settings.json 的
+        dismissed_changelog_version；之后该版本不再弹（仍保留标题栏角标）。
+        """
+        from aao.ui.settings_page import load_settings, save_settings
+
         self._latest_version = info.version
         self.setWindowTitle(f"ArknightsAutoOperator  [有新版本 v{info.version}]")
-        logger.info("标题栏已标记新版本提示，前往设置页「检查更新」一键更新")
+
+        # 已忽略此版本 → 只留标题栏角标，不弹窗
+        if load_settings().get("dismissed_changelog_version") == info.version:
+            logger.info("新版本 v%s 已被忽略公告，仅标题栏标记", info.version)
+            return
+
+        from aao.ui.changelog_dialog import ChangelogDialog
+
+        self._hide_overlay()
+        dlg = ChangelogDialog(info.version, info.notes, self)
+        dlg.exec()
+        self._show_overlay()
+        if dlg.dismissed:
+            s = load_settings()
+            s["dismissed_changelog_version"] = info.version
+            save_settings(s)
+            logger.info("用户选择不再提醒 v%s 公告", info.version)
+        else:
+            logger.info("已展示新版本 v%s 公告，前往设置页「检查更新」一键更新", info.version)
 
     # --- 新手引导 ---
 

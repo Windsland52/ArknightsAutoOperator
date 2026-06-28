@@ -33,6 +33,8 @@ from aao.utils.runtime_paths import is_frozen, project_root
 
 _REPO = "Windsland52/ArknightsAutoOperator"
 _RELEASES_API = f"https://api.github.com/repos/{_REPO}/releases/latest"
+# 所有 release 列表（数组）；用于拼接当前版本→最新版之间的多版本 changelog。
+_RELEASES_LIST_API = f"https://api.github.com/repos/{_REPO}/releases?per_page=100"
 # 中转 bat 名：固定放 %TEMP%（不能在安装目录，否则无法重命名安装目录）。
 _UPDATER_BAT = "aao_self_update.bat"
 # app 退出后 bat 轮询 exe 进程退出的最长等待（秒）。正常几秒即可，给清理留余量。
@@ -101,11 +103,18 @@ class UpdateChecker:
             return None
 
         asset = _pick_win_asset(data.get("assets", []))
+        # 有更新时拉取当前版本→最新版之间所有 release 的 notes 拼成 changelog
+        # （含中间版本）；失败降级为仅最新版 body。
+        if _compare_versions(latest, __version__) > 0:
+            changelog = self._fetch_changelog_since(__version__)
+            notes = changelog if changelog else (data.get("body", "") or "")
+        else:
+            notes = data.get("body", "") or ""
         info = ReleaseInfo(
             version=latest,
             html_url=data.get("html_url", ""),
             asset=asset,
-            notes=data.get("body", "") or "",
+            notes=notes,
         )
         logger.info(
             "当前 %s → 最新 %s (%s)",
@@ -114,6 +123,51 @@ class UpdateChecker:
             "有更新" if info.has_update else "最新",
         )
         return info
+
+    def _fetch_changelog_since(self, current: str) -> str:
+        """拉取所有 release，拼接「版本号 > current」的全部 notes（降序）。
+
+        用于更新公告：展示当前版本到最新版之间所有版本的变更，不只是最新一个
+        （参考 AFA ChangelogChecker._ReadAndBuildBody）。每段加 ``## vX.X.X`` 标题，
+        用 ``---`` 分隔。网络失败返回空串（调用方降级为只显示最新版 notes）。
+
+        Args:
+            current: 当前版本号（不带 v 前缀）。
+
+        Returns:
+            拼接后的 markdown changelog；无中间版本或失败返回 ""。
+        """
+        try:
+            req = _make_request(_RELEASES_LIST_API, _settings_github_token())
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                releases = json.loads(resp.read())
+        except Exception as e:  # noqa: BLE001
+            logger.warning("拉取 release 列表失败，降级为单版 changelog: %s", e)
+            return ""
+
+        if not isinstance(releases, list):
+            return ""
+
+        # 筛 version > current 的，按版本降序排
+        entries: list[tuple[str, str]] = []  # (version, body)
+        for r in releases:
+            ver = str(r.get("tag_name", "")).lstrip("v")
+            if not ver or _compare_versions(ver, current) <= 0:
+                continue
+            body = r.get("body", "") or ""
+            entries.append((ver, body))
+        entries.sort(key=lambda kv: _version_sort_key(kv[0]), reverse=True)
+
+        if not entries:
+            return ""
+
+        parts: list[str] = []
+        for ver, body in entries:
+            body = body.strip()
+            # 去掉 body 里已有的同级 ``## 版本号/日期`` 头，避免与下面加的标题重复
+            body = _strip_leading_h2(body)
+            parts.append(f"## v{ver}\n\n{body}" if body else f"## v{ver}")
+        return "\n\n---\n\n".join(parts)
 
     # 旧签名兼容：返回 (has_update, version, html_url)。供未迁移的调用方使用。
     def check_software_legacy(self) -> tuple[bool, str, str]:
@@ -430,6 +484,27 @@ def _compare_versions(a: str, b: str) -> int:
         if va < vb:
             return -1
     return 0
+
+
+def _version_sort_key(v: str) -> tuple[int, ...]:
+    """版本号 → 可比较的元组（用于 sort；缺失位补 0）。"""
+    parts = [int(x) for x in v.split(".") if x.isdigit()]
+    return tuple(parts)
+
+
+def _strip_leading_h2(body: str) -> str:
+    """去掉 body 开头的 ``## ...`` 标题行（git-cliff 生成的 changelog 自带版本/日期头，
+    与我们加的 ``## vX.X.X`` 重复）。只剥第一段非空行若是 h2。"""
+    lines = body.splitlines()
+    i = 0
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    if i < len(lines) and lines[i].lstrip().startswith("## "):
+        del lines[i]
+        # 顺带去掉紧跟的空行
+        while i < len(lines) and not lines[i].strip():
+            del lines[i]
+    return "\n".join(lines).strip()
 
 
 def _build_updater_bat(
