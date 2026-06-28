@@ -87,3 +87,40 @@ def ensure_afa() -> bool:
     except (OSError, subprocess.SubprocessError):
         logger.exception("拉起 AFA 失败")
         return False
+
+
+def stop_afa(timeout: float = 5.0) -> bool:
+    """停止自带 AFA 进程（自更新前调用，避免 afa/AFA.exe 被占用导致 robocopy 跳过覆盖）。
+
+    AFA 是 detached 独立进程，aao.app 退出不会带走它；若更新时不先停掉，
+    robocopy 覆盖 afa/AFA.exe 会因文件占用而静默跳过（rc 仍 <8 不报错），
+    用户拿到旧 AFA。
+
+    Returns:
+        True 若已无 AFA 进程（本就没跑或已成功停止）；False 若超时仍在。
+    """
+    if not is_afa_running():
+        return True
+    if sys.platform != "win32":
+        return False
+    try:
+        # taskkill /F /IM 精确按进程名杀；/T 连带子进程。
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/IM", _AFA_PROCESS],
+            capture_output=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        logger.exception("停止 AFA 失败")
+        return False
+
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not is_afa_running():
+            logger.info("AFA 已停止（为自更新让路）")
+            return True
+        time.sleep(0.2)
+    logger.warning("停止 AFA 超时（%ss 仍存活），更新可能跳过 afa/AFA.exe", timeout)
+    return False

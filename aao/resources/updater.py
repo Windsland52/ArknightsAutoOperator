@@ -203,7 +203,15 @@ class UpdateChecker:
         if progress_cb:
             progress_cb(0, total)
 
-        opener = _make_opener(_settings_proxy())
+        proxy = _settings_proxy()
+        logger.info(
+            "开始下载更新包: %s -> %s (公告大小 %d bytes, 代理 %s)",
+            info.asset.url,
+            dest,
+            total,
+            "开" if proxy else "关",
+        )
+        opener = _make_opener(proxy)
         token = _settings_github_token()
         for attempt in range(1, _DOWNLOAD_RETRIES + 1):
             try:
@@ -213,16 +221,21 @@ class UpdateChecker:
                     # 回退用 info.asset.size。
                     cl = resp.headers.get("Content-Length")
                     total = int(cl) if cl and cl.isdigit() else total
+                    logger.info("下载连接已建立 (Content-Length=%s, 实际 total=%d)", cl, total)
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     tmp = dest.with_suffix(dest.suffix + ".tmp")
                     downloaded = 0
                     last_report = 0
+                    # 进度里程碑：每 10% 落一条日志（与 UI progress_cb 的 512KB 回调独立，
+                    # 后者只更新状态栏不写文件）。total 未知时改按字节量里程碑。
+                    next_milestone_pct = 10
+                    next_milestone_bytes = 10 * 1024 * 1024  # 10MB
                     with tmp.open("wb") as f:
                         while True:
                             if cancel is not None and cancel.is_set():
                                 f.close()
                                 tmp.unlink(missing_ok=True)
-                                logger.info("更新下载已取消")
+                                logger.info("更新下载已取消 (已下 %d bytes)", downloaded)
                                 return False
                             chunk = resp.read(_CHUNK_SIZE)
                             if not chunk:
@@ -232,12 +245,24 @@ class UpdateChecker:
                             if progress_cb and downloaded - last_report >= _PROGRESS_REPORT_BYTES:
                                 progress_cb(downloaded, total)
                                 last_report = downloaded
+                            # 里程碑日志
+                            if total > 0:
+                                pct = downloaded * 100 // total
+                                if pct >= next_milestone_pct:
+                                    logger.info(
+                                        "下载进度: %d%% (%d/%d bytes)", pct, downloaded, total
+                                    )
+                                    next_milestone_pct = (pct // 10 + 1) * 10
+                            elif downloaded >= next_milestone_bytes:
+                                logger.info("下载进度: %d bytes (总长未知)", downloaded)
+                                next_milestone_bytes += 10 * 1024 * 1024
                     tmp.replace(dest)
                     if progress_cb:
                         progress_cb(downloaded, total or downloaded)
                     logger.info("更新包下载完成: %s (%d bytes)", dest.name, downloaded)
                     return True
             except Exception as e:  # noqa: BLE001
+                logger.warning("更新包下载第 %d/%d 次失败: %s", attempt, _DOWNLOAD_RETRIES, e)
                 if attempt < _DOWNLOAD_RETRIES:
                     time.sleep(_DOWNLOAD_BACKOFF_SEC * attempt)
                     continue
@@ -265,6 +290,15 @@ class UpdateChecker:
             logger.warning("apply_update 仅在打包环境可用，开发环境跳过")
             return
 
+        # 先停掉自带 AFA：它是 detached 独立进程，aao.app 退出带不走它，
+        # 若不停，robocopy 覆盖 afa/AFA.exe 会因占用静默跳过（rc<8 不报错）→ 用户拿旧 AFA。
+        try:
+            from aao.core.afa import stop_afa
+
+            stop_afa()
+        except Exception:  # noqa: BLE001
+            logger.exception("停 AFA 失败，继续更新（afa/AFA.exe 可能被跳过）")
+
         install_dir = project_root()  # exe 同级目录
         exe_name = Path(sys.executable).name
         # 中转 bat 必须在安装目录之外（否则无法重命名安装目录），放 %TEMP%。
@@ -283,12 +317,38 @@ class UpdateChecker:
             bat_path=bat_path,
         )
         bat_path.write_text(bat, encoding="gbk", errors="replace")
-        logger.info("启动自更新中转脚本: %s", bat_path)
 
-        # /B 不开新控制台窗口；DETACHED_PROCESS 让它脱离父进程生命周期。
+        # 中转 bat 全程无控制台（DETACHED + CREATE_NO_WINDOW），其 echo/命令输出原本无处可去。
+        # 用 Popen 的 stdout/stderr 文件句柄重定向到 self_update.log，解压/robocopy/重启
+        # 任一步失败都会留痕（bat 失败后仍会自删，但 log 保留）。debug/ 已被 bat 的 robocopy
+        # 排除，不会被覆盖。
+        #
+        # ⚠️ 不要把重定向拼进 cmd 命令行（如 ["cmd","/c",f'"{bat}" >> "{log}" 2>&1']）：
+        # 路径含空格时引号嵌套会让 cmd 解析失败，bat 根本不执行
+        # （实测：log 不建、bat/zip 残留在 TEMP）。
+        # 用文件句柄重定向则完全绕开命令行引号问题。
+        log_path = install_abs / "debug" / "aao" / "self_update.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        logger.info("启动自更新中转脚本: %s (日志 -> %s)", bat_path, log_path)
+
+        # 覆盖写本次日志（"w"），旧更新日志不累积。句柄交给子进程，本进程退出不关闭。
+        log_fp = log_path.open("w", encoding="utf-8", errors="replace")
+
+        # 让中转 bat 脱离本进程生命周期：app 退出后仍能跑完替换+重启。
+        # - DETACHED_PROCESS：子进程不继承父控制台（无黑窗）
+        # - CREATE_NEW_PROCESS_GROUP：独立进程组，不受父 Ctrl 信号影响
+        # - CREATE_BREAKAWAY_FROM_JOB (0x01000000)：脱离父进程所在 Job。
+        #   关键：PyInstaller exe 退出时，Windows Job 的 kill-on-close 会连带终止所有
+        #   子进程——不加此 flag，bat 会在 app.quit() 后被一起杀掉（实测：log 停在
+        #   "waiting for app to exit"，exe 已退出但 bat 也死了，解压/重启从未执行）。
+        #   DETACHED_PROCESS 与 CREATE_NO_WINDOW (0x08000000) 互斥，前者已隐含无控制台。
         subprocess.Popen(
             ["cmd", "/c", str(bat_path)],
-            creationflags=subprocess.DETACHED_PROCESS | 0x08000000,  # CREATE_NO_WINDOW
+            stdout=log_fp,
+            stderr=subprocess.STDOUT,
+            creationflags=subprocess.DETACHED_PROCESS
+            | subprocess.CREATE_NEW_PROCESS_GROUP
+            | 0x01000000,
             close_fds=True,
         )
 
@@ -397,6 +457,19 @@ def _build_updater_bat(
         'exit 0 } catch { exit 1 }"'
     )
 
+    # 等待 exe 退出：用 PowerShell 单行检测，绝不用 cmd 管道（tasklist | findstr/find）。
+    # 原因：bat 以 DETACHED_PROCESS 启动（无控制台），管道里的 findstr/find 作为控制台子进程
+    # 会被 Windows 分配新控制台 → 弹黑窗，且管道不关闭时 findstr 卡死；for/l 循环每秒再 spawn
+    # 一个新的 → 用户看到"findstr 窗关了又弹新的"。Get-Process 不走 cmd 管道，无子进程弹窗。
+    # exit code 区分：0=exe 已退出，1=超时仍存活。.format 里 PowerShell 的 { } 写成 {{ }}。
+    exe_base = exe[:-4] if exe.lower().endswith(".exe") else exe
+    ps_wait = (
+        "powershell -NoProfile -Command \"$ErrorActionPreference='SilentlyContinue';"
+        f" $t=0; while ((Get-Process -Name '{exe_base}') -and ($t -lt {_WAIT_EXIT_TIMEOUT}))"
+        " { Start-Sleep -Milliseconds 800; $t++ };"
+        f" if (Get-Process -Name '{exe_base}') {{ exit 1 }} else {{ exit 0 }}\""
+    )
+
     # bat 里用 %~dp0 取 bat 自身所在目录不可靠（我们在 %TEMP%），全部用绝对路径。
     return f"""@echo off
 chcp 65001 >nul
@@ -408,17 +481,24 @@ set "ZIP={zip_path}"
 set "STAGING={staging}"
 set "BAT={bat_path}"
 
+echo ===== aao self-update %date% %time% =====
+echo EXE=%EXE%
+echo INSTALL=%INSTALL%
+echo ZIP=%ZIP%
 echo [aao-self-update] waiting for app to exit...
-for /l %%i in (1,1,{_WAIT_EXIT_TIMEOUT}) do (
-    tasklist /fi "imagename eq %EXE%" 2>nul | findstr /i "%EXE%" >nul
-    if errorlevel 1 goto :exited
-    timeout /t 1 /nobreak >nul
+REM PowerShell 检测 exe 退出（exit 0=已退出, 1=超时）；不用 cmd 管道避免 findstr 弹窗。
+{ps_wait}
+if errorlevel 1 (
+    echo [aao-self-update] WARN: app still running after {_WAIT_EXIT_TIMEOUT}s, aborting.
+    goto :cleanup_self
 )
-echo [aao-self-update] WARN: app still running after {_WAIT_EXIT_TIMEOUT}s, aborting.
-goto :cleanup_self
 
 :exited
-echo [aao-self-update] app exited. extracting...
+echo [aao-self-update] app exited.
+REM 兜底停 AFA（Python 端已尝试过，此处防用户自开的实例占用 afa/AFA.exe）。
+REM 用 taskkill /IM 精确按名杀，2>nul 吞掉“无此进程”的输出。
+taskkill /F /T /IM AFA.exe >nul 2>&1
+echo [aao-self-update] extracting...
 if exist "%STAGING%" rmdir /s /q "%STAGING%"
 
 REM 重试解压

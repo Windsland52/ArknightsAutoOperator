@@ -673,6 +673,13 @@ class SettingsPage(QWidget):
         打包后的 aao.app/，对源码树会破坏 .git/aao 等目录。故源码模式只提示
         用 git pull 更新，不进入下载流程。
         """
+        # check_update 的 worker 已 emit 完结果，线程无事可做——主动结束并清理。
+        # 它只 emit 了 update_found（没走 finished_ok/failed），QThread 不会自动退出，
+        # self._thread 也不会被 _cleanup_thread 清空。若不在此清理，弹窗里点「立即更新」
+        # 触发的 _run_resource("download") 会被守卫挡住（“上一次操作还在进行中…”），
+        # 下载线程根本起不来。模态弹窗会阻塞主线程事件循环，故必须在弹窗前同步清理。
+        self._finalize_current_resource()
+
         from aao.utils.runtime_paths import is_frozen
 
         self._pending_update = info
@@ -751,12 +758,23 @@ class SettingsPage(QWidget):
             self.lbl_op.setText(f"启动更新失败: {e}")
             return
         logger.info("自更新中转已启动，退出主进程以完成安装")
-        # 触发真退出（绕过最小化到托盘的 close 偏好）
+        # 触发真退出：必须走 MainWindow 的强制退出路径（设 _force_quit + 停 worker + quit），
+        # 不能只调 QApplication.quit()——后者不设 _force_quit，closeEvent 会弹"关闭行为选择"
+        # 对话框，且 minimize 偏好下 exe 不真退出，bat 的等退出循环永远等不到，更新卡死。
         from PySide6.QtWidgets import QApplication
 
         app = QApplication.instance()
-        if app is not None:
-            app.quit()
+        if app is None:
+            return
+        # topLevelWidgets 是 QApplication 的静态方法；app 实例类型标注为 QCoreApplication，
+        # 故通过类名调用，绕过类型窄化。
+        for w in QApplication.topLevelWidgets():
+            quit_fn = getattr(w, "_quit_from_tray", None)
+            if callable(quit_fn):
+                quit_fn()
+                return
+        # 兜底（找不到 MainWindow）：直接 quit
+        app.quit()
 
     def _on_res_done(self, msg: str) -> None:
         self.lbl_op.setText(msg)
@@ -774,3 +792,23 @@ class SettingsPage(QWidget):
         self._worker = None
         self._thread = None
         self._res_mode = None
+
+    def _finalize_current_resource(self) -> None:
+        """主动结束并清理当前资源 worker 线程。
+
+        用于 check_update 发现更新后：worker 只 emit 了 update_found，QThread 不会
+        自动退出，self._thread 不会被 _cleanup_thread 清空，导致后续下载被
+        _run_resource 的“上一次操作还在进行中”守卫挡住。此处同步 quit+wait 清理，
+        并恢复按钮状态（update_found 不走 _on_res_done，按钮不会自行恢复）。
+
+        _cleanup_thread 仍会由 thread.finished 触发一次，但此时 self._thread 已为 None，
+        其逻辑幂等，不会重复出错。
+        """
+        if self._thread is not None:
+            self._thread.quit()
+            self._thread.wait()
+        self._worker = None
+        self._thread = None
+        self._res_mode = None
+        self._set_res_buttons(True)
+        self.btn_sync.setText("🔄 同步资源")
