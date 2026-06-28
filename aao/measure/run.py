@@ -65,7 +65,8 @@ def main() -> int:
 
     from maa.toolkit import Toolkit
 
-    Toolkit.init_option(str(paths["debug"]))
+    # init_option 传 root：maafw 自建 debug/（maafw.log）+ config/，与 debug/aao/ 平级。
+    Toolkit.init_option(str(paths["root"]))
 
     data = calibration.load(args.profile)
     logger.info(

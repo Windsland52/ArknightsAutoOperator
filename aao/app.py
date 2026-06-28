@@ -725,7 +725,9 @@ def main() -> int:
 
     from maa.toolkit import Toolkit
 
-    Toolkit.init_option(str(paths["debug"]))
+    # init_option 传 root（安装目录）：maafw 会在其下自建 debug/（maafw.log）和
+    # config/，与我们的 debug/aao/*.log 平级共处同一 debug/ 目录，避免嵌套成 debug/debug/。
+    Toolkit.init_option(str(paths["root"]))
 
     controller = connect_window(
         Toolkit,
