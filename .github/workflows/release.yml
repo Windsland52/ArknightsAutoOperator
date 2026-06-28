@@ -12,6 +12,7 @@ jobs:
         with:
             artifact_name: win-x64
             archive_prefix: ArknightsAutoOperator-win-x64-${{ github.ref_name }}
+            version: ${{ github.ref_name }}
 
     git_cliff:
         name: Generate release notes

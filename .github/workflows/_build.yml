@@ -9,6 +9,11 @@ on:
             archive_prefix:
                 required: true
                 type: string
+            version:
+                description: 注入到 aao/__init__.py 的版本号（带或不带 v 前缀；留空则不注入）
+                required: false
+                type: string
+                default: ''
 
 jobs:
     build:
@@ -32,6 +37,16 @@ jobs:
                   cache: pnpm
             - run: pnpm install --frozen-lockfile
             - run: uv sync
+            - name: Inject version from tag
+              if: ${{ inputs.version != '' }}
+              shell: bash
+              env:
+                  VERSION: ${{ inputs.version }}
+              run: |
+                  v="${VERSION#v}"  # 去掉 v 前缀，与 about_page 显示 v{__version__} / updater 比较一致
+                  sed -i "s/__version__ = \".*\"/__version__ = \"$v\"/" aao/__init__.py
+                  echo "[OK] injected __version__ = $v"
+                  grep "__version__" aao/__init__.py
             - run: pnpm check && pnpm check:py
             - name: Disable Windows Defender realtime monitoring
               shell: powershell
