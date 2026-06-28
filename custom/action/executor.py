@@ -439,44 +439,36 @@ class ExecuteTimeline(CustomAction):
         ctrl: Controller,
         context_tasker_stopping: Callable[[], bool],
     ) -> bool:
-        """开局 0 帧暂停: 等 BattleOfficiallyBegin → 狂按 F → 等 Play.png.
+        """开局 0 帧暂停: 持续发 F(→AFA→ESC) 直到 Play.png 出现。
 
-        不发 R 验证, 避免 0 帧被推进.
+        加载期间 ESC 无效；游戏一活立刻被 F→AFA→ESC 停住。
+        不需要等 BattleOn 或做颜色检测——啥都不等，直接开始按。
         """
-        # 1. 等 BattleOfficiallyBegin 出现 (战斗加载完成, 可操作)
-        logger.debug("开局暂停: 等待战斗加载完成")
-        for _ in range(50):
-            if context_tasker_stopping():
-                return False
-            time.sleep(0.2)
-            img = self._screenshot(ctrl)
-            if img is None:
-                continue
-            reco = context.run_recognition("Farm@BattleOn", img)
-            if reco and reco.hit:
-                logger.debug("开局暂停: 战斗已加载")
-                break
-        else:
-            logger.error("开局暂停: 等待战斗加载超时")
-            return False
+        _TIMEOUT_S = 30.0
+        t0 = time.monotonic()
+        deadline = t0 + _TIMEOUT_S
+        i = 0
+        logger.debug("开局暂停: 持续 ESC（加载期无效，一活即停，超时 %.0fs）", _TIMEOUT_S)
 
-        # 2. 狂按 F 直到 Play.png 出现
-        for i in range(50):
+        while time.monotonic() < deadline:
             if context_tasker_stopping():
                 return False
+            i += 1
             self._tap_afa(afa_hotkey.VK_F, "F 开局暂停")
             self._paused = True
-            time.sleep(0.03)
             img = self._screenshot(ctrl)
-            if img is None:
-                continue
-            reco = context.run_recognition("BattlePaused", img)
-            if reco and reco.hit:
-                logger.debug("开局暂停成功 (Play.png 命中), attempt=%d", i + 1)
-                return True
-            logger.debug("开局暂停: Play.png 未命中, attempt=%d", i + 1)
+            if img is not None:
+                reco = context.run_recognition("BattlePaused", img)
+                if reco and reco.hit:
+                    t1 = time.monotonic()
+                    logger.info(
+                        "开局暂停成功 | 总计=%.2fs (%d 次 F)",
+                        t1 - t0,
+                        i,
+                    )
+                    return True
 
-        logger.error("开局暂停: 按 F 50 次仍未暂停")
+        logger.error("开局暂停: 超时（%.0fs, %d 次 F）", _TIMEOUT_S, i)
         self._paused = False
         return False
 

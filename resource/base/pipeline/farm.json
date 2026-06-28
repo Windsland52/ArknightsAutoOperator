@@ -95,15 +95,15 @@
         ]
     },
     "Farm@BattleOn": {
-        "desc": "等战斗正式加载",
-        "recognition": "TemplateMatch",
-        "roi": [
-            1186,
-            18,
-            60,
-            60
-        ],
-        "template": "BattleOfficiallyBegin.png",
+        // "desc": "等战斗正式加载",
+        // "recognition": "TemplateMatch",
+        // "roi": [
+        //     1186,
+        //     18,
+        //     60,
+        //     60
+        // ],
+        // "template": "BattleOfficiallyBegin.png",
         "next": [
             "Farm@Execute"
         ]
