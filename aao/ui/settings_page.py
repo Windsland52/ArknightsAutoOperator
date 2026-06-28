@@ -356,6 +356,17 @@ class SettingsPage(QWidget):
         bg_form.addRow("透明度:", bg_op_row)
         self._add_collapsible(root, "settings_background", "背景图", bg_box, "设置主控台背景图片")
 
+        # --- 日志 ---
+        log_box = QGroupBox("日志")
+        log_layout = QVBoxLayout(log_box)
+        log_layout.addWidget(QLabel("导出全部日志，便于反馈排查。"))
+        self.btn_export_log = QPushButton("📦 导出日志")
+        log_row = QHBoxLayout()
+        log_row.addWidget(self.btn_export_log)
+        log_row.addStretch()
+        log_layout.addLayout(log_row)
+        self._add_collapsible(root, "settings_log", "日志", log_box, "导出运行时日志")
+
         root.addStretch()
 
         # 日志
@@ -374,6 +385,7 @@ class SettingsPage(QWidget):
         self.btn_preview.clicked.connect(self._preview_window)
         self.btn_save_win.clicked.connect(self._save_window)
         self.btn_token_eye.clicked.connect(self._toggle_token_visible)
+        self.btn_export_log.clicked.connect(self._on_export_log)
 
         self._windows: list = []  # DesktopWindow 列表（与 list_windows 行对应）
         self._preview_thread: QThread | None = None
@@ -512,6 +524,39 @@ class SettingsPage(QWidget):
         else:
             self.edit_github_token.setEchoMode(QLineEdit.EchoMode.Password)
             self.btn_token_eye.setText("👁")
+
+    def _on_export_log(self) -> None:
+        """导出 debug/ 全部日志为 zip：弹保存对话框 → 打包 → 打开所在文件夹。"""
+        from datetime import datetime
+
+        from aao.utils.logger import export_logs
+
+        default_name = f"aao-logs-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
+        dest, _ = QFileDialog.getSaveFileName(self, "导出日志", default_name, "ZIP 压缩包 (*.zip)")
+        if not dest:
+            return
+        try:
+            n = export_logs(Path(dest))
+        except Exception as e:  # noqa: BLE001
+            logger.exception("导出日志失败")
+            QMessageBox.warning(self, "导出失败", f"导出日志失败：{e}")
+            return
+        if n == 0:
+            self.lbl_op.setText("无日志可导出（debug/ 不存在）")
+            return
+        self.lbl_op.setText(f"已导出 {n} 个日志文件到 {dest}")
+        # 打开所在文件夹并选中（Windows explorer /select）
+        from aao.utils.runtime_paths import is_frozen
+
+        if is_frozen():
+            import subprocess
+
+            subprocess.Popen(["explorer", "/select,", str(Path(dest).resolve())])
+        else:
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(dest).parent)))
 
     def _on_theme_changed(self, idx: int) -> None:
         """主题下拉切换：即时应用 + 持久化（纯 UI 偏好，无需重启或点保存按钮）。"""

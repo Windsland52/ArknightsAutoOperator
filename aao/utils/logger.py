@@ -138,4 +138,35 @@ def add_qt_sink(callback: Callable[[str], None], level: str = "INFO") -> Any:
     return _loguru_logger.add(callback, format=_CONSOLE_FORMAT, level=level, colorize=False)
 
 
-__all__ = ["setup_logging", "add_qt_sink", "logger"]
+def export_logs(dest_zip: Path) -> int:
+    """把整个 debug/ 目录打成 zip（aao 日志 + maafw.log + 历史压缩包）。
+
+    用于用户反馈/排查：一键导出全部运行时日志。当前正在写的日志文件会被
+    读取后写入 zip（loguru enqueue 的文件句柄不阻止读取）。
+
+    Args:
+        dest_zip: 目标 zip 路径。
+
+    Returns:
+        打入 zip 的文件数；debug/ 不存在返回 0。
+    """
+    import zipfile
+
+    from aao.utils.runtime_paths import project_root
+
+    debug_dir = project_root() / "debug"
+    if not debug_dir.exists():
+        return 0
+
+    dest_zip.parent.mkdir(parents=True, exist_ok=True)
+    count = 0
+    with zipfile.ZipFile(dest_zip, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in sorted(debug_dir.rglob("*")):
+            if p.is_file():
+                # zip 内相对路径保留 debug/aao/... 与 debug/maafw.log 结构
+                zf.write(p, p.relative_to(debug_dir.parent))
+                count += 1
+    return count
+
+
+__all__ = ["setup_logging", "add_qt_sink", "export_logs", "logger"]
