@@ -110,14 +110,23 @@ class TimeSource:
         self._cost_is_negative = tick.detect_negative_cost(frame)
         effective_total = total_this * 2 if self._cost_is_negative else total_this
 
-        lf_measured = tick.get_logical_frame(frame, roi, profile.pixel_map)
+        # 负费（可露希尔）：用浮点插值取亚帧相位，再重投射到翻倍周期。
+        # pixel_map 按正常速率校准（30f/费），负费时回费减半（60f/费），
+        # 离散最近邻会丢亚帧精度 → 负费下半段系统性偏小。
+        # 对应 Rust lookup_open_interior_display_frame_f64 + frame_from_phase。
+        if self._cost_is_negative:
+            lf_f64 = tick.get_logical_frame_f64(frame, roi, profile.pixel_map)
+            if lf_f64 is not None and total_this > 0:
+                phase = lf_f64 / total_this
+                # 乘 effective_total 再 clamp [0, eff-1]，而非乘 (eff-1)，
+                # 后者会让上半段偏小、下半段系统性少 1 帧。
+                lf_measured = round(phase * effective_total)
+                lf_measured = max(0, min(effective_total - 1, lf_measured))
+            else:
+                lf_measured = None
+        else:
+            lf_measured = tick.get_logical_frame(frame, roi, profile.pixel_map)
         now = time.time()
-
-        # 负费相位重投射：pixel_map 按正常速率校准（30f/费），负费时回费减半（60f/费），
-        # 需把校准帧当相位重投射到翻倍周期。
-        if lf_measured is not None and self._cost_is_negative and total_this > 0:
-            phase = lf_measured / total_this
-            lf_measured = round(phase * (effective_total - 1))
 
         # 边界后周期去掉 hidden 帧：校准在慢速下检测到的隐藏辉光帧（如 frame 1
         # 无独立宽度）在边界后左开右闭周期里不存在，需从帧序列中跳过。

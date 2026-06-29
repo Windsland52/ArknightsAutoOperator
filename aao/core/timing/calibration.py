@@ -195,10 +195,13 @@ def _build_profile(cluster: list[list[int]], model_num: int) -> CalibrationProfi
     unique_widths = sorted(width_counts)
     total_frames = len(unique_widths) + num_hidden
 
+    # pixel_map value = internal frame（不含周期起点的 +1 偏移）。
+    # 对应 Rust synthesis.rs 的 local_frame = global_frame - start_frame - 1。
+    # tick 层查表后做 display = internal + 1 转换（open_interior 语义）。
     pixel_map: dict[str, int] = {}
     if 0 in width_counts:
-        pixel_map["0"] = 0
-    frame_offset = 1 + num_hidden
+        pixel_map["0"] = 0  # internal=0（端点，display 经 tick 层端点修正为 0）
+    frame_offset = num_hidden  # 第一个非零 width → internal=num_hidden
     nonzero_widths = [w for w in unique_widths if w > 0]
     for idx, width in enumerate(nonzero_widths):
         pixel_map[str(width)] = idx + frame_offset
@@ -223,6 +226,9 @@ def calibration_dir() -> Path:
     return d
 
 
+_CALIBRATION_FORMAT_VERSION = 2  # v1=display frame, v2=internal frame（对齐 Rust synthesis）
+
+
 def save(data: FullCalibrationData, basename: str) -> str:
     """保存校准数据，文件名含帧数+分辨率。返回文件名（不含目录）。"""
     parts = [str(p.total_frames) for p in data.profiles]
@@ -230,6 +236,7 @@ def save(data: FullCalibrationData, basename: str) -> str:
     filename = f"{basename}_{frame_str}_{data.screen_width}x{data.screen_height}.json"
     path = calibration_dir() / filename
     payload = {
+        "format_version": _CALIBRATION_FORMAT_VERSION,
         "detection_mode": data.detection_mode,
         "profiles": [asdict(p) for p in data.profiles],
         "screen_width": data.screen_width,
@@ -241,11 +248,34 @@ def save(data: FullCalibrationData, basename: str) -> str:
     return filename
 
 
+def _migrate_v1_to_v2(profiles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """v1 (display frame) to v2 (internal frame): non-zero width frame -1, width=0 unchanged."""
+    for p in profiles:
+        pm = p.get("pixel_map", {})
+        migrated: dict[str, int] = {}
+        for k, v in pm.items():
+            w = int(k)
+            migrated[k] = v if w == 0 else v - 1
+        p["pixel_map"] = migrated
+    return profiles
+
+
 def from_dict(raw: dict[str, Any]) -> FullCalibrationData:
-    """从已解析的校准 dict 构造 FullCalibrationData（供 replay 等自包含场景使用）。"""
+    """从已解析的校准 dict 构造 FullCalibrationData（供 replay 等自包含场景使用）。
+
+    自动迁移旧格式（v1=display frame -> v2=internal frame）。
+    """
+    profiles_raw = raw["profiles"]
+    version = raw.get("format_version", 1)
+    if version < _CALIBRATION_FORMAT_VERSION:
+        logger.warning(
+            "校准文件 format_version=%d，迁移到 v%d", version, _CALIBRATION_FORMAT_VERSION
+        )
+        if version == 1:
+            profiles_raw = _migrate_v1_to_v2(profiles_raw)
     profiles = [
         CalibrationProfile(total_frames=p["total_frames"], pixel_map=p["pixel_map"])
-        for p in raw["profiles"]
+        for p in profiles_raw
     ]
     return FullCalibrationData(
         detection_mode=raw["detection_mode"],

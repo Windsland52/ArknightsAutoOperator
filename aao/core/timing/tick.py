@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import bisect
+
 import numpy as np
 
 from aao import config
@@ -128,8 +130,20 @@ def get_filled_pixel_width(frame: np.ndarray, roi: Roi) -> int | None:
     return result
 
 
+def _internal_to_display(pw: int, internal: int) -> int:
+    """internal frame → display frame（open_interior 语义）。
+
+    pixel_map value 是 internal frame（不含周期起点）。display = internal + 1，
+    但 width=0 是周期起点端点，display=0（对应 Rust open_interior_endpoint_frame）。
+    """
+    return 0 if pw == 0 else internal + 1
+
+
 def get_logical_frame(frame: np.ndarray, roi: Roi, pixel_map: dict[str, int]) -> int | None:
     """像素宽 → 逻辑帧（via 校准 pixel_map）。
+
+    pixel_map value 是 internal frame，返回 display frame = internal + 1
+    （width=0 端点返回 0）。对应 Rust open_interior_internal_frame。
 
     先直接命中，否则在 PIXEL_TOLERANCE(5) 内取最近。未命中返回 None。
     """
@@ -138,7 +152,7 @@ def get_logical_frame(frame: np.ndarray, roi: Roi, pixel_map: dict[str, int]) ->
         return None
     key = str(pw)
     if key in pixel_map:
-        return pixel_map[key]
+        return _internal_to_display(pw, pixel_map[key])
     best_frame: int | None = None
     best_diff = config.PIXEL_TOLERANCE + 1
     for k, v in pixel_map.items():
@@ -146,7 +160,67 @@ def get_logical_frame(frame: np.ndarray, roi: Roi, pixel_map: dict[str, int]) ->
         if diff < best_diff:
             best_diff = diff
             best_frame = v
-    return best_frame if best_diff <= config.PIXEL_TOLERANCE else None
+    if best_frame is None or best_diff > config.PIXEL_TOLERANCE:
+        return None
+    return _internal_to_display(pw, best_frame)
+
+
+def get_logical_frame_f64(frame: np.ndarray, roi: Roi, pixel_map: dict[str, int]) -> float | None:
+    """像素宽 → 逻辑帧（浮点插值）。
+
+    与 ``get_logical_frame`` 的离散最近邻不同，本函数在两个校准点之间线性插值，
+    保留亚帧精度。用于负费相位重投射（pixel_map 按正常速率校准，负费时回费
+    减半，需亚帧精度做相位映射）。
+
+    pixel_map value 是 internal frame。插值在 internal 上做，返回 display = internal + 1
+    （width=0 端点返回 0.0）。对应 Rust lookup_interpolated_frame +
+    open_interior_internal_frame_f64。
+
+    Returns:
+        逻辑帧（浮点），或 None 表示 ROI 无效 / 未命中。
+    """
+    pw = get_filled_pixel_width(frame, roi)
+    if pw is None:
+        return None
+
+    # width=0 端点修正（对应 Rust open_interior_endpoint_frame）。
+    if pw == 0 and "0" in pixel_map:
+        return 0.0
+
+    # 排序条目（pixel_width 升序；internal frame 随 width 单调递增）。
+    entries = sorted((int(k), v) for k, v in pixel_map.items())
+    if not entries:
+        return None
+
+    widths = [e[0] for e in entries]
+    pos = bisect.bisect_left(widths, pw)
+
+    # 精确命中：internal → display = internal + 1
+    if pos < len(entries) and widths[pos] == pw:
+        return float(entries[pos][1] + 1)
+
+    # 左边界：仅在容差内返回端点
+    if pos == 0:
+        w, f = entries[0]
+        if abs(w - pw) <= config.PIXEL_TOLERANCE:
+            return float(_internal_to_display(w, f))
+        return None
+
+    # 右边界：仅在容差内返回端点
+    if pos >= len(entries):
+        w, f = entries[-1]
+        if abs(w - pw) <= config.PIXEL_TOLERANCE:
+            return float(_internal_to_display(w, f))
+        return None
+
+    # 两点之间线性插值（在 internal 上插值，再 +1 得 display）
+    lw, lf = entries[pos - 1]
+    uw, uf = entries[pos]
+    if lw == uw:
+        return float(lf + 1)
+    ratio = (pw - lw) / (uw - lw)
+    internal = lf + ratio * (uf - lf)
+    return internal + 1.0
 
 
 def detect_negative_cost(frame: np.ndarray) -> bool:
