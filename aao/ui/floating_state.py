@@ -12,7 +12,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from PySide6.QtWidgets import QWidget
 
@@ -26,8 +26,9 @@ def clear_all() -> None:
 def load_state(window_id: str) -> dict[str, Any]:
     s = _load_settings()
     data = s.get("floating_windows", {})
-    item = data.get(window_id, {}) if isinstance(data, dict) else {}
-    return item if isinstance(item, dict) else {}
+    windows = cast(dict[str, Any], data) if isinstance(data, dict) else {}
+    item = windows.get(window_id, {})
+    return cast(dict[str, Any], item) if isinstance(item, dict) else {}
 
 
 def save_state(window_id: str, patch: dict[str, Any]) -> None:
@@ -35,9 +36,11 @@ def save_state(window_id: str, patch: dict[str, Any]) -> None:
     windows = s.get("floating_windows", {})
     if not isinstance(windows, dict):
         windows = {}
+    windows = cast(dict[str, Any], windows)
     item = windows.get(window_id, {})
     if not isinstance(item, dict):
         item = {}
+    item = cast(dict[str, Any], item)
     item.update(patch)
     windows[window_id] = item
     s["floating_windows"] = windows
@@ -55,7 +58,8 @@ def restore_geometry(window_id: str, widget: QWidget) -> None:
         return
     if not isinstance(g, list | tuple):
         return
-    x, y, w, h = [int(v) for v in g]
+    values = [_to_int(v) for v in cast(list[object] | tuple[object, ...], g)]
+    x, y, w, h = values
     widget.setGeometry(x, y, w, h)
 
 
@@ -73,17 +77,27 @@ def save_follow(window_id: str, follow: dict[str, Any] | None) -> None:
 
 def load_follow(window_id: str) -> dict[str, Any] | None:
     value = load_state(window_id).get("follow")
-    return value if isinstance(value, dict) else None
+    return cast(dict[str, Any], value) if isinstance(value, dict) else None
 
 
 def _valid_geometry(value: object) -> bool:
-    if not isinstance(value, list | tuple) or len(value) != 4:
+    if not isinstance(value, list | tuple):
+        return False
+    seq = cast(list[object] | tuple[object, ...], value)
+    if len(seq) != 4:
         return False
     try:
-        _x, _y, w, h = [int(v) for v in value]
+        values = [_to_int(v) for v in seq]
+        _x, _y, w, h = values
     except (TypeError, ValueError):
         return False
     return w > 0 and h > 0
+
+
+def _to_int(value: object) -> int:
+    if isinstance(value, str | int | float):
+        return int(value)
+    raise TypeError(f"invalid integer value: {value!r}")
 
 
 def _load_settings() -> dict[str, Any]:

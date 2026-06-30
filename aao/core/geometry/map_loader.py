@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
+from aao.types import JsonObject
 from aao.utils.logger import logger
 from aao.utils.runtime_paths import project_root
 
@@ -25,7 +27,8 @@ def _level_codes() -> dict[str, str]:
     path = project_root() / "data" / "level_codes.json"
     if not path.exists():
         return {}
-    return json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return cast(dict[str, str], data) if isinstance(data, dict) else {}
 
 
 def find_map_file(code: str) -> Path | None:
@@ -52,17 +55,21 @@ def find_map_file(code: str) -> Path | None:
     return None
 
 
-def load_map(code: str) -> dict | None:
+def load_map(code: str) -> JsonObject | None:
     """加载关卡数据。code 如 '1-7'。"""
     path = find_map_file(code)
     if path is None:
         logger.error("未找到关卡 %s 的地图数据", code)
         return None
     data = json.loads(path.read_text(encoding="utf-8"))
-    logger.info(
-        "加载关卡 %s (%s): %dx%d", code, data.get("name", "?"), data["height"], data["width"]
-    )
-    return data
+    if not isinstance(data, dict):
+        logger.error("关卡 %s 的地图数据格式无效", code)
+        return None
+    name = str(cast(JsonObject, data).get("name", "?"))
+    height = int(cast(JsonObject, data)["height"])
+    width = int(cast(JsonObject, data)["width"])
+    logger.info("加载关卡 %s (%s): %dx%d", code, name, height, width)
+    return cast(JsonObject, data)
 
 
 def list_codes() -> list[str]:

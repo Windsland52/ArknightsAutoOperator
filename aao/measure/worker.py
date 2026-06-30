@@ -15,6 +15,7 @@ from PySide6.QtCore import QObject, Signal
 
 from aao.core.timing.calibration import FullCalibrationData
 from aao.core.timing.time_source import TimeSource
+from aao.types import MeasureState
 from aao.utils.logger import logger
 
 if TYPE_CHECKING:
@@ -47,13 +48,13 @@ class MeasurementWorker(QObject):
         self._running = False
         self._reset_requested = False
         self._consecutive_errors = 0
-        self._latest: dict = {}
+        self._latest: MeasureState = {}
         self._lock = threading.Lock()
 
     @property
-    def latest_state(self) -> dict:
+    def latest_state(self) -> MeasureState:
         with self._lock:
-            return dict(self._latest)
+            return self._latest.copy()
 
     def run(self) -> None:
         self._running = True
@@ -98,7 +99,7 @@ class MeasurementWorker(QObject):
                 time.sleep(backoff)
                 continue
 
-            state = {
+            state: MeasureState = {
                 "isRunning": self.time_source.is_running,
                 "currentFrame": self.time_source.current_frame_in_cycle,
                 "totalFramesInCycle": self.time_source.total_frames_in_cycle,

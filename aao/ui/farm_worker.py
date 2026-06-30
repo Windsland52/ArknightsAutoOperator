@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, Signal
 
+from aao.types import JsonObject
 from aao.utils.jsonc import load as load_jsonc
 from custom.action.executor import ExecuteTimeline, RoundResult
 from custom.reco.click_stage import get_attempt_count, reset_attempt_count
@@ -114,7 +115,7 @@ class FarmWorker(QObject):
         tl_param = json.dumps({"timeline_path": self._timeline_path}, ensure_ascii=False)
         pipeline["Farm@ClickStage"]["custom_recognition_param"] = tl_param
 
-        exec_param: dict = {"timeline_path": self._timeline_path}
+        exec_param: JsonObject = {"timeline_path": self._timeline_path}
         if self._profile:
             exec_param["calibration"] = self._profile
         pipeline["Farm@Execute"]["custom_action_param"] = json.dumps(exec_param, ensure_ascii=False)

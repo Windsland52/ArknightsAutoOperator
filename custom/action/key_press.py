@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import json
 import time
+from typing import Any, cast
 
 from maa.context import Context
 from maa.custom_action import CustomAction
 
 from aao.core import afa_hotkey
+from aao.types import JsonObject
 from aao.utils.logger import logger
 from custom.registry import custom_action
 
@@ -30,9 +32,13 @@ class KeyPressAction(CustomAction):
         raw = argv.custom_action_param
         logger.info("KeyPress 收到参数: %r", raw)
         try:
-            params = json.loads(raw) if raw else {}
-            if isinstance(params, str):  # 双重 JSON 编码
-                params = json.loads(params)
+            raw_params: Any = json.loads(raw) if raw else {}
+            if isinstance(raw_params, str):  # 双重 JSON 编码
+                raw_params = json.loads(raw_params)
+            if not isinstance(raw_params, dict):
+                logger.error("KeyPress 参数必须是 JSON object: %r", raw_params)
+                return CustomAction.RunResult(success=False)
+            params = cast(JsonObject, raw_params)
 
             key = params.get("key")
             interval_ms = int(params.get("interval_ms", 0))
@@ -40,7 +46,7 @@ class KeyPressAction(CustomAction):
                 logger.error("KeyPress 缺少 key，params=%r", params)
                 return CustomAction.RunResult(success=False)
 
-            keys = key if isinstance(key, list) else [key]
+            keys: list[Any] = cast(list[Any], key) if isinstance(key, list) else [key]
             for i, vk in enumerate(keys):
                 if i and interval_ms:
                     time.sleep(interval_ms / 1000.0)

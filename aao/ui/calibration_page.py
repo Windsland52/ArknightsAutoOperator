@@ -172,7 +172,11 @@ class CalibrationPage(QWidget):
         self._thread = QThread()
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
-        self._worker.progress.connect(lambda p: self.progress.setValue(int(p * 100)))
+
+        def _on_progress(p: float) -> None:
+            self.progress.setValue(int(p * 100))
+
+        self._worker.progress.connect(_on_progress)
         self._worker.log.connect(self.txt_log.append)
         self._worker.finished_ok.connect(self._on_done)
         self._worker.failed.connect(self._on_failed)

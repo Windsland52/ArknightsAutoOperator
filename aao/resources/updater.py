@@ -25,9 +25,11 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from aao import __version__
 from aao.resources import syncer
+from aao.types import JsonObject
 from aao.utils.logger import logger, setup_logging
 from aao.utils.runtime_paths import is_frozen, project_root
 
@@ -93,7 +95,8 @@ class UpdateChecker:
             if token:
                 req.add_header("Authorization", f"Bearer {token}")
             with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read())
+                raw = json.loads(resp.read())
+                data = cast(JsonObject, raw) if isinstance(raw, dict) else {}
         except Exception as e:  # noqa: BLE001
             logger.warning("检查更新失败: %s", e)
             return None
@@ -140,12 +143,10 @@ class UpdateChecker:
         try:
             req = _make_request(_RELEASES_LIST_API, _settings_github_token())
             with urllib.request.urlopen(req, timeout=10) as resp:
-                releases = json.loads(resp.read())
+                raw = json.loads(resp.read())
+                releases = cast(list[JsonObject], raw) if isinstance(raw, list) else []
         except Exception as e:  # noqa: BLE001
             logger.warning("拉取 release 列表失败，降级为单版 changelog: %s", e)
-            return ""
-
-        if not isinstance(releases, list):
             return ""
 
         # 筛 version > current 的，按版本降序排
@@ -209,13 +210,13 @@ class UpdateChecker:
                 progress_cb(r.message)
         return results
 
-    def update_all(self, progress_cb: Callable[[str], None] | None = None) -> dict:
+    def update_all(self, progress_cb: Callable[[str], None] | None = None) -> JsonObject:
         """检查软件更新 + 更新资源。
 
         Returns:
             {"software": ReleaseInfo | None, "resources": [SyncResult]}
         """
-        result: dict = {}
+        result: JsonObject = {}
 
         if progress_cb:
             progress_cb("检查软件更新...")
@@ -417,7 +418,7 @@ _DOWNLOAD_RETRIES = 3
 _DOWNLOAD_BACKOFF_SEC = 1.0
 
 
-def _pick_win_asset(assets: list) -> AssetInfo | None:
+def _pick_win_asset(assets: list[JsonObject]) -> AssetInfo | None:
     """从 release assets 里选 win-x64 zip。"""
     for a in assets:
         name = str(a.get("name", "")).lower()
@@ -437,7 +438,9 @@ def _settings_proxy() -> str | None:
         path = project_root() / "config" / "settings.json"
         if not path.exists():
             return None
-        proxy = json.loads(path.read_text(encoding="utf-8")).get("proxy", "")
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        data = cast(JsonObject, raw) if isinstance(raw, dict) else {}
+        proxy = data.get("proxy", "")
         return str(proxy).strip() or None
     except Exception:  # noqa: BLE001
         return None
@@ -450,7 +453,9 @@ def _settings_github_token() -> str | None:
         path = project_root() / "config" / "settings.json"
         if not path.exists():
             return None
-        enc = json.loads(path.read_text(encoding="utf-8")).get("github_token_enc", "")
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        data = cast(JsonObject, raw) if isinstance(raw, dict) else {}
+        enc = data.get("github_token_enc", "")
         return decrypt_text(str(enc)) if enc else None
     except Exception:  # noqa: BLE001
         return None

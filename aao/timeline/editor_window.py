@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+from typing import cast
 
 from PySide6.QtCore import QEvent, QObject, QRect, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPalette
@@ -316,6 +317,7 @@ class EditorWindow(QWidget):
         s = load_settings()
         states = s.get("collapsible_sections", {})
         if isinstance(states, dict) and "timeline_side_panel" in states:
+            states = cast(dict[str, object], states)
             self._set_side_panel_visible(bool(states["timeline_side_panel"]))
 
     def _style_frame_label(self) -> None:

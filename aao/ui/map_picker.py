@@ -10,6 +10,8 @@ QGraphicsScene y 向下，故 y = r*cell：r 小(行号大、玩家上方)→画
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import (
@@ -26,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from aao.core.geometry.convert_pos import tile_position_to_str
 from aao.core.geometry.map_loader import load_map
+from aao.types import JsonObject
 
 _CELL = 40
 _COLORS = {
@@ -43,12 +46,12 @@ class _MapGrid(QGraphicsView):
 
     picked = Signal(str)  # 棋盘记号，如 "D2"
 
-    def __init__(self, map_data: dict):
+    def __init__(self, map_data: JsonObject):
         super().__init__()
         self._map_data = map_data
-        self._height = map_data["height"]
-        self._width = map_data["width"]
-        self._tiles = map_data["tiles"]
+        self._height = int(map_data["height"])
+        self._width = int(map_data["width"])
+        self._tiles = cast(list[list[dict[str, Any]]], map_data["tiles"])
         self._selected: tuple[int, int] | None = None  # (col, row)
         self._cell_items: dict[tuple[int, int], QGraphicsRectItem] = {}
 

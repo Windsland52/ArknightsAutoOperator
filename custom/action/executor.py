@@ -23,6 +23,7 @@ import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any, cast
 
 import numpy as np
 from maa.context import Context
@@ -38,6 +39,7 @@ from aao.core.geometry.map_loader import load_map
 from aao.core.geometry.view import transform_map_to_view
 from aao.core.timing.calibration import load as load_calibration
 from aao.core.timing.time_source import TimeSource
+from aao.types import JsonObject
 from aao.utils.logger import logger
 from custom.registry import custom_action
 
@@ -78,16 +80,22 @@ class ExecuteTimeline(CustomAction):
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> CustomAction.RunResult:
         try:
-            params = json.loads(argv.custom_action_param) if argv.custom_action_param else {}
+            raw_params: Any = (
+                json.loads(argv.custom_action_param) if argv.custom_action_param else {}
+            )
             # MAA 可能双重 JSON 编码 custom_action_param
-            if isinstance(params, str):
-                params = json.loads(params)
+            if isinstance(raw_params, str):
+                raw_params = json.loads(raw_params)
+            if not isinstance(raw_params, dict):
+                logger.error("ExecuteTimeline 参数必须是 JSON object: %r", raw_params)
+                return CustomAction.RunResult(success=False)
+            params = cast(JsonObject, raw_params)
             return self._execute(context, params)
         except Exception:
             logger.exception("ExecuteTimeline 异常")
             return CustomAction.RunResult(success=False)
 
-    def _execute(self, context: Context, params: dict) -> CustomAction.RunResult:
+    def _execute(self, context: Context, params: JsonObject) -> CustomAction.RunResult:
         ctrl = context.tasker.controller
 
         # 优先 timeline_path（从文件加载，文件内含 map_code），兼容显式 timeline 数组
@@ -95,7 +103,7 @@ class ExecuteTimeline(CustomAction):
         tl_calib = ""
         tl_speed_mode = "auto"
         if timeline_path:
-            tl = self._load_timeline_file(timeline_path)
+            tl = self._load_timeline_file(str(timeline_path))
             if tl is None:
                 return CustomAction.RunResult(success=False)
             raw_actions = tl.get("actions", [])
@@ -222,7 +230,7 @@ class ExecuteTimeline(CustomAction):
         # 漏怪 = 本局失败（farm pipeline 会走放弃重试）
         return CustomAction.RunResult(success=not self._leaked and not self._abort_reason)
 
-    def _load_timeline_file(self, path: str) -> dict | None:
+    def _load_timeline_file(self, path: str) -> JsonObject | None:
         """加载时间轴 JSON（纯文件名→config/timelines/，带路径→相对项目根）。"""
         from custom.reco.click_stage import resolve_timeline_path
 
@@ -235,13 +243,18 @@ class ExecuteTimeline(CustomAction):
         except (OSError, ValueError):
             logger.exception("时间轴文件解析失败: %s", p)
             return None
-        n = len(data.get("actions", []))
-        logger.info("加载时间轴 %s（map_code=%s, %d 动作）", p, data.get("map_code"), n)
-        return data
+        if not isinstance(data, dict):
+            logger.error("时间轴文件必须是 JSON object: %s", p)
+            return None
+        obj = cast(JsonObject, data)
+        actions = obj.get("actions", [])
+        n = len(cast(list[object], actions)) if isinstance(actions, list) else 0
+        logger.info("加载时间轴 %s（map_code=%s, %d 动作）", p, obj.get("map_code"), n)
+        return obj
 
-    def _parse_actions(self, raw: list[dict], map_data: dict) -> list[Action]:
+    def _parse_actions(self, raw: list[JsonObject], map_data: JsonObject) -> list[Action]:
         """解析 JSON 动作列表 → Action 对象（含投影坐标 + 目标帧）。"""
-        h, w = map_data["height"], map_data["width"]
+        h, w = int(map_data["height"]), int(map_data["width"])
         front = transform_map_to_view(map_data, side=False)
         side = transform_map_to_view(map_data, side=True)
 
@@ -258,14 +271,16 @@ class ExecuteTimeline(CustomAction):
                 tick_val = item.get("tick")
                 target_frame = (cost_val or 0) * config.TICK_MAX_DEFAULT + (tick_val or 0)
 
+            action_type = item.get("action_type")
+            direction = item.get("direction")
             a = Action(
                 cost=cost_val,
                 tick=tick_val,
                 time=item.get("time"),
-                action_type=ActionType(item["action_type"]) if "action_type" in item else None,
+                action_type=ActionType(action_type) if action_type is not None else None,
                 oper=item.get("oper"),
                 pos=item.get("pos"),
-                direction=DirectionType(item["direction"]) if "direction" in item else None,
+                direction=DirectionType(direction) if direction is not None else None,
                 alias=item.get("alias"),
             )
             if not a.is_valid():

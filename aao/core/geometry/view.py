@@ -13,6 +13,8 @@ import math
 
 import numpy as np
 
+from aao.types import JsonObject
+
 # 投影参数（prts-plus ViewCalculationConfig）
 _FROM_RATIO = 9 / 16
 _NEAR = 0.3
@@ -69,7 +71,7 @@ def _build_matrix(view_offset: list[float], side: bool) -> np.ndarray:
 
 
 def transform_map_to_view(
-    level_data: dict,
+    level_data: JsonObject,
     side: bool = False,
 ) -> list[list[tuple[float, float]]]:
     """把关卡数据投影为屏幕坐标（0-1 比例）。

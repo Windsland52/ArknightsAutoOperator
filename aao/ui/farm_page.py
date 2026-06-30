@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
@@ -294,6 +294,7 @@ class FarmPage(QWidget):
         self.spin_accept_late.setValue(s.get("accept_late_frames", config.ACCEPT_LATE_FRAMES))
         states = s.get("collapsible_sections", {})
         if isinstance(states, dict) and "farm_advanced_params" in states:
+            states = cast(dict[str, object], states)
             self._advanced_box.set_expanded(bool(states["farm_advanced_params"]))
 
     def _on_advanced_param_changed(self) -> None:

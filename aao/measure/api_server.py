@@ -15,6 +15,7 @@ from typing import Any
 
 import websockets
 
+from aao.types import MeasureState
 from aao.utils.logger import logger
 
 DEFAULT_PORT = 2606
@@ -25,7 +26,7 @@ class ApiServer:
 
     def __init__(
         self,
-        get_state: Callable[[], dict],
+        get_state: Callable[[], MeasureState],
         host: str = "localhost",
         port: int = DEFAULT_PORT,
         rate_hz: float = 60.0,
@@ -34,7 +35,7 @@ class ApiServer:
         self.host = host
         self.port = port
         self.rate_hz = rate_hz
-        self._clients: set = set()
+        self._clients: set[Any] = set()
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:

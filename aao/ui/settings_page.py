@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 from aao import __version__
 from aao.resources.syncer import sync_all
 from aao.resources.updater import ReleaseInfo, UpdateChecker
+from aao.types import JsonObject
 from aao.ui import theme
 from aao.ui.collapsible_box import CollapsibleBox
 from aao.ui.scrollbar_style import apply_themed_scrollbar
@@ -40,24 +41,26 @@ from aao.utils.logger import logger
 from aao.utils.runtime_paths import project_root
 
 if TYPE_CHECKING:
+    from maa.toolkit import DesktopWindow
     from PySide6.QtGui import QImage, QShowEvent
 
 
-def _settings_path():
+def _settings_path() -> Path:
     return project_root() / "config" / "settings.json"
 
 
-def load_settings() -> dict:
+def load_settings() -> JsonObject:
     p = _settings_path()
     if not p.exists():
         return {}
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return cast(JsonObject, data) if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
 
 
-def save_settings(data: dict) -> None:
+def save_settings(data: JsonObject) -> None:
     p = _settings_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -208,7 +211,11 @@ class SettingsPage(QWidget):
         box = CollapsibleBox(title)
         box.set_summary(summary)
         box.add_widget(widget)
-        box.toggled.connect(lambda expanded, k=key: self._save_collapsible_state(k, expanded))
+
+        def _on_toggled(expanded: bool, k: str = key) -> None:
+            self._save_collapsible_state(k, expanded)
+
+        box.toggled.connect(_on_toggled)
         self._collapsibles[key] = box
         root.addWidget(box)
         return box
@@ -387,7 +394,7 @@ class SettingsPage(QWidget):
         self.btn_token_eye.clicked.connect(self._toggle_token_visible)
         self.btn_export_log.clicked.connect(self._on_export_log)
 
-        self._windows: list = []  # DesktopWindow 列表（与 list_windows 行对应）
+        self._windows: list[DesktopWindow] = []  # DesktopWindow 列表（与 list_windows 行对应）
         self._preview_thread: QThread | None = None
         self._preview_worker: _PreviewWorker | None = None
 
@@ -451,7 +458,7 @@ class SettingsPage(QWidget):
             self.list_windows.setCurrentRow(saved_row)
         self.lbl_win_status.setText(f"找到 {len(wins)} 个窗口，选中后可预览/设为默认")
 
-    def _selected_window(self):
+    def _selected_window(self) -> DesktopWindow | None:
         row = self.list_windows.currentRow()
         if row < 0 or row >= len(self._windows):
             return None
@@ -613,6 +620,7 @@ class SettingsPage(QWidget):
         self.lbl_bg_val.setText(f"{self.slider_bg.value()}%")
         states = s.get("collapsible_sections", {})
         if isinstance(states, dict):
+            states = cast(dict[str, object], states)
             for key, box in self._collapsibles.items():
                 if key in states:
                     box.set_expanded(bool(states[key]))

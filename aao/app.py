@@ -53,6 +53,7 @@ from aao.measure.api_server import ApiServer  # noqa: E402
 from aao.measure.overlay import OverlayWindow  # noqa: E402
 from aao.measure.worker import MeasurementWorker  # noqa: E402
 from aao.timeline.editor_window import EditorWindow  # noqa: E402
+from aao.types import MeasureState  # noqa: E402
 from aao.ui.about_page import AboutPage  # noqa: E402
 from aao.ui.background import BackgroundContainer  # noqa: E402
 from aao.ui.calibration_page import CalibrationPage  # noqa: E402
@@ -493,7 +494,7 @@ class MainWindow(QMainWindow):
             logger.debug("计时器重置（pipeline 节点: %s）", node_name)
             self.worker.request_reset_timer()
 
-    def _on_measure_state(self, state: dict) -> None:
+    def _on_measure_state(self, state: MeasureState) -> None:
         from aao.core.timing.time_source import format_timer
 
         total = state.get("totalElapsedFrames", 0)

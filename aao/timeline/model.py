@@ -17,9 +17,17 @@ JSON 格式：
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from aao.core.battle.action import ActionType, DirectionType
+
+
+def _empty_actions() -> list[TimelineAction]:
+    return []
+
+
+def _empty_candidates() -> list[str]:
+    return []
 
 
 @dataclass
@@ -90,9 +98,9 @@ class Timeline:
 
     map_code: str = ""
     coordinate: str = "frame"  # "frame" | "time"
-    actions: list[TimelineAction] = field(default_factory=list)
+    actions: list[TimelineAction] = field(default_factory=_empty_actions)
     name: str = ""  # 用户可读名称
-    candidates: list[str] = field(default_factory=list)  # 候选干员/装置名
+    candidates: list[str] = field(default_factory=_empty_candidates)  # 候选干员/装置名
     calibration_profile: str = ""  # 打轴时用的校准 profile 文件名
     speed_mode: str = "auto"  # "auto"（自动变速）或 "manual"（手动变速）
 
@@ -112,14 +120,22 @@ class Timeline:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Timeline:
+        raw_candidates = d.get("candidates", [])
+        candidates = cast(list[object], raw_candidates) if isinstance(raw_candidates, list) else []
+        raw_actions = d.get("actions", [])
+        actions = cast(list[object], raw_actions) if isinstance(raw_actions, list) else []
         return cls(
-            map_code=d.get("map_code", ""),
-            coordinate=d.get("coordinate", "frame"),
-            name=d.get("name", ""),
-            candidates=d.get("candidates", []),
-            calibration_profile=d.get("calibration_profile", ""),
-            speed_mode=d.get("speed_mode", "auto"),
-            actions=[TimelineAction.from_dict(a) for a in d.get("actions", [])],
+            map_code=str(d.get("map_code", "")),
+            coordinate=str(d.get("coordinate", "frame")),
+            name=str(d.get("name", "")),
+            candidates=[str(v) for v in candidates],
+            calibration_profile=str(d.get("calibration_profile", "")),
+            speed_mode=str(d.get("speed_mode", "auto")),
+            actions=[
+                TimelineAction.from_dict(cast(dict[str, Any], a))
+                for a in actions
+                if isinstance(a, dict)
+            ],
         )
 
     def sorted(self) -> None:

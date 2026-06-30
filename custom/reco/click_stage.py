@@ -9,10 +9,12 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from typing import cast
 
 from maa.context import Context
 from maa.custom_recognition import CustomRecognition
 
+from aao.types import JsonObject
 from aao.utils.logger import logger
 from aao.utils.runtime_paths import project_root
 from custom.registry import custom_recognition
@@ -65,7 +67,7 @@ def resolve_timeline_path(timeline_path: str) -> Path:
     return _TIMELINE_DIR / timeline_path
 
 
-def _load_timeline_data(timeline_path: str | None) -> dict | None:
+def _load_timeline_data(timeline_path: str | None) -> JsonObject | None:
     """加载 timeline JSON。"""
     if not timeline_path:
         logger.error("timeline_path 为空")
@@ -75,7 +77,8 @@ def _load_timeline_data(timeline_path: str | None) -> dict | None:
         logger.error("时间轴文件不存在: %s", p)
         return None
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return cast(JsonObject, data) if isinstance(data, dict) else None
     except (OSError, ValueError):
         logger.exception("时间轴文件解析失败: %s", p)
         return None
@@ -89,7 +92,7 @@ def read_map_code(timeline_path: str | None) -> str | None:
     mc = data.get("map_code")
     if not mc:
         logger.error("时间轴文件无 map_code")
-    return mc
+    return str(mc) if mc else None
 
 
 def read_stage_text(timeline_path: str | None) -> str | None:
@@ -97,7 +100,8 @@ def read_stage_text(timeline_path: str | None) -> str | None:
     data = _load_timeline_data(timeline_path)
     if not data:
         return None
-    return data.get("stage_text") or data.get("map_code")
+    text = data.get("stage_text") or data.get("map_code")
+    return str(text) if text else None
 
 
 @custom_recognition("ClickStage")

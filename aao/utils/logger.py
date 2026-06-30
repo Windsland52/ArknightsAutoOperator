@@ -13,10 +13,11 @@ loguru 原生只支持 {} 风格格式化；现有代码用 logging 的 %-style
 
 from __future__ import annotations
 
+import io
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger as _loguru_logger
 
@@ -93,10 +94,11 @@ def setup_logging(level: str = "INFO", log_dir: str | Path = _DEFAULT_LOG_DIR) -
     """
     # windowed 打包(console=False)下 sys.stdout 为 None，跳过控制台 sink
     # （日志仍写文件 + UI 面板）
-    has_console = sys.stdout is not None
-    if has_console:
+    console = sys.stdout
+    has_console = console is not None
+    if isinstance(console, io.TextIOWrapper):
         try:
-            sys.stdout.reconfigure(encoding="utf-8")  # pyright: ignore[reportAttributeAccessIssue]
+            console.reconfigure(encoding="utf-8")
         except AttributeError:
             pass
 
@@ -108,7 +110,7 @@ def setup_logging(level: str = "INFO", log_dir: str | Path = _DEFAULT_LOG_DIR) -
     # 用户显示 sink：控制台，仅消息，去来源（windowed 下无控制台则跳过）
     if has_console:
         _loguru_logger.add(
-            sys.stdout,
+            cast(Any, console),
             format=_CONSOLE_FORMAT,
             level=level,
             colorize=True,

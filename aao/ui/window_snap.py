@@ -15,6 +15,7 @@ import ctypes.wintypes
 import sys
 import weakref
 from dataclasses import dataclass
+from typing import cast
 
 from PySide6.QtCore import QPoint, QRect
 from PySide6.QtWidgets import QApplication, QWidget
@@ -115,16 +116,25 @@ def follow_from_dict(data: dict[str, object] | None) -> SnapFollow | None:
         return None
     if target_id is not None and not isinstance(target_id, str):
         return None
-    if not isinstance(offset, list | tuple) or len(offset) != 2:
+    if not isinstance(offset, list | tuple):
+        return None
+    pair = cast(list[object] | tuple[object, ...], offset)
+    if len(pair) != 2:
         return None
     try:
-        point = QPoint(int(offset[0]), int(offset[1]))
+        point = QPoint(_to_int(pair[0]), _to_int(pair[1]))
     except (TypeError, ValueError):
         return None
     widget_ref = None
     if kind in ("floating", "main") and target_id:
         widget_ref = _SNAP_WINDOWS_BY_ID.get(target_id)
     return SnapFollow(str(kind), target_id, point, widget_ref)
+
+
+def _to_int(value: object) -> int:
+    if isinstance(value, str | int | float):
+        return int(value)
+    raise TypeError(f"invalid integer value: {value!r}")
 
 
 def follow_top_left(follow: SnapFollow) -> QPoint | None:

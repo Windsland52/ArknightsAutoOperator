@@ -20,6 +20,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QApplication, QLabel, QSizeGrip, QVBoxLayout, QWidget
 
 from aao.core.timing.time_source import format_timer
+from aao.types import MeasureState
 from aao.ui import floating_state
 from aao.ui.window_snap import (
     create_snap_follow,
@@ -131,7 +132,7 @@ class OverlayWindow(QWidget):
         self.move(x, y)
         self._save_window_state()
 
-    def on_state(self, state: dict) -> None:
+    def on_state(self, state: MeasureState) -> None:
         running = state.get("isRunning", False)
         cf = state.get("currentFrame")
         total = state.get("totalFramesInCycle", 0)

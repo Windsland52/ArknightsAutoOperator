@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict, cast
 
 import numpy as np
 
@@ -23,6 +23,12 @@ from aao.utils.logger import logger
 
 # MAA 常量（1280×720）
 _DETAIL_WAIT = 1  # 等详情页打开
+
+
+class Slot(TypedDict):
+    flag_rect: tuple[int, int, int, int]
+    avatar_rect: tuple[int, int, int, int]
+    click_pos: tuple[int, int]
 
 
 def _avatar_dir() -> Path:
@@ -39,7 +45,14 @@ def _match_avatar_roi_offset() -> tuple[int, int, int, int]:
 
     path = project_root() / "resource" / "base" / "pipeline" / "reco.json"
     raw = json.loads(path.read_text(encoding="utf-8"))
-    offset = raw["MatchAvatar"].get("roi_offset", [0, 0, 0, 0])
+    if not isinstance(raw, dict):
+        return (0, 0, 0, 0)
+    data = cast(dict[str, object], raw)
+    match_avatar = data.get("MatchAvatar")
+    if not isinstance(match_avatar, dict):
+        return (0, 0, 0, 0)
+    match_avatar = cast(dict[str, object], match_avatar)
+    offset = match_avatar.get("roi_offset", [0, 0, 0, 0])
     return tuple(int(v) for v in offset)  # type: ignore[return-value]
 
 
@@ -56,7 +69,9 @@ def _get_char_id(oper_name: str) -> str:
     if not mapping_path.exists():
         return ""
     mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
-    return mapping.get(oper_name, "")
+    if not isinstance(mapping, dict):
+        return ""
+    return str(cast(dict[str, object], mapping).get(oper_name, ""))
 
 
 def _normalize_name(name: str) -> str:
@@ -71,14 +86,14 @@ def _normalize_name(name: str) -> str:
 def detect_slots(
     context: Context,
     image: np.ndarray,
-) -> list[dict]:
+) -> list[Slot]:
     """用 pipeline 节点 DetectSlots 检测待部署区所有干员槽位。"""
     reco_detail = context.run_recognition("DetectSlots", image)
 
     if not reco_detail or not reco_detail.hit:
         return []
 
-    slots = []
+    slots: list[Slot] = []
     for result in reco_detail.all_results:
         box = getattr(result, "box", None)
         if box is None:
@@ -217,7 +232,7 @@ def _ocr_oper_name(context: Context, detail_img: np.ndarray) -> str | None:
 
 def _save_avatar_from_image(
     image: np.ndarray,
-    slot: dict,
+    slot: Slot,
     oper_name: str,
 ) -> bool:
     """从截图截取槽位头像并存盘。"""

@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import bisect
+from typing import cast
 
 import numpy as np
 
@@ -245,9 +246,11 @@ def detect_negative_cost(frame: np.ndarray) -> bool:
 
     region = frame[y : y + h, x : x + w].astype(np.int16)  # (h, w, 3) BGR
     white = (region > config.WHITE_THRESHOLD).all(axis=2)  # (h, w) bool
+    white_rows = cast(np.ndarray, white)
 
     # 逐行求最长连续纯白 run：对每行做行内累计，遇非白清零，取全局最大。
-    for row in white:  # pyright: ignore[reportGeneralTypeIssues]
+    for row_index in range(int(white_rows.shape[0])):
+        row = cast(np.ndarray, white_rows[row_index])
         if not row.any():
             continue
         # 累计连续 True 长度：cumsum 在非白处“断点”归零的经典向量化写法。

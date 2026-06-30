@@ -84,7 +84,8 @@ def make_sink(
     返回 should_debug=False：不额外开启 debug mode，避免额外开销。
     """
     global _on_outcome_cb
-    from maa.context import Context, ContextEventSink, NotificationType
+    from maa.context import Context, ContextEventSink
+    from maa.event_sink import NotificationType
 
     _on_outcome_cb = on_outcome
 
