@@ -23,6 +23,7 @@ import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from maa.context import Context
@@ -87,7 +88,7 @@ class ExecuteTimeline(CustomAction):
             logger.exception("ExecuteTimeline 异常")
             return CustomAction.RunResult(success=False)
 
-    def _execute(self, context: Context, params: dict) -> CustomAction.RunResult:
+    def _execute(self, context: Context, params: dict[str, Any]) -> CustomAction.RunResult:
         ctrl = context.tasker.controller
 
         # 优先 timeline_path（从文件加载，文件内含 map_code），兼容显式 timeline 数组
@@ -222,7 +223,7 @@ class ExecuteTimeline(CustomAction):
         # 漏怪 = 本局失败（farm pipeline 会走放弃重试）
         return CustomAction.RunResult(success=not self._leaked and not self._abort_reason)
 
-    def _load_timeline_file(self, path: str) -> dict | None:
+    def _load_timeline_file(self, path: str) -> dict[str, Any] | None:
         """加载时间轴 JSON（纯文件名→config/timelines/，带路径→相对项目根）。"""
         from custom.reco.click_stage import resolve_timeline_path
 
@@ -239,7 +240,9 @@ class ExecuteTimeline(CustomAction):
         logger.info("加载时间轴 %s（map_code=%s, %d 动作）", p, data.get("map_code"), n)
         return data
 
-    def _parse_actions(self, raw: list[dict], map_data: dict) -> list[Action]:
+    def _parse_actions(
+        self, raw: list[dict[str, Any]], map_data: dict[str, Any]
+    ) -> list[Action]:
         """解析 JSON 动作列表 → Action 对象（含投影坐标 + 目标帧）。"""
         h, w = map_data["height"], map_data["width"]
         front = transform_map_to_view(map_data, side=False)

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 import numpy as np
 
@@ -445,7 +446,9 @@ def detect_battle_state(frame: np.ndarray) -> BattleState:
     }
 
 
-def _diagnose_battle_begin_bands(frame: np.ndarray, width: int, height: int, scale: float) -> dict:
+def _diagnose_battle_begin_bands(
+    frame: np.ndarray, width: int, height: int, scale: float
+) -> dict[str, Any]:
     """诊断 7 band sampling 各 band 的值。"""
     step = max(4, round(scale * BATTLE_BEGIN_SAMPLE_STEP_SCALE))
     top_y_step = max(step, round(height * 0.10))

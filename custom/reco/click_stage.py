@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from typing import Any
 
 from maa.context import Context
 from maa.custom_recognition import CustomRecognition
@@ -65,7 +66,7 @@ def resolve_timeline_path(timeline_path: str) -> Path:
     return _TIMELINE_DIR / timeline_path
 
 
-def _load_timeline_data(timeline_path: str | None) -> dict | None:
+def _load_timeline_data(timeline_path: str | None) -> dict[str, Any] | None:
     """加载 timeline JSON。"""
     if not timeline_path:
         logger.error("timeline_path 为空")

@@ -10,6 +10,8 @@ QGraphicsScene y 向下，故 y = r*cell：r 小(行号大、玩家上方)→画
 
 from __future__ import annotations
 
+from typing import Any
+
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import (
@@ -43,7 +45,7 @@ class _MapGrid(QGraphicsView):
 
     picked = Signal(str)  # 棋盘记号，如 "D2"
 
-    def __init__(self, map_data: dict):
+    def __init__(self, map_data: dict[str, Any]):
         super().__init__()
         self._map_data = map_data
         self._height = map_data["height"]

@@ -47,7 +47,7 @@ def _settings_path():
     return project_root() / "config" / "settings.json"
 
 
-def load_settings() -> dict:
+def load_settings() -> dict[str, Any]:
     p = _settings_path()
     if not p.exists():
         return {}
@@ -57,7 +57,7 @@ def load_settings() -> dict:
         return {}
 
 
-def save_settings(data: dict) -> None:
+def save_settings(data: dict[str, Any]) -> None:
     p = _settings_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -387,7 +387,7 @@ class SettingsPage(QWidget):
         self.btn_token_eye.clicked.connect(self._toggle_token_visible)
         self.btn_export_log.clicked.connect(self._on_export_log)
 
-        self._windows: list = []  # DesktopWindow 列表（与 list_windows 行对应）
+        self._windows: list[Any] = []  # DesktopWindow 列表（与 list_windows 行对应）
         self._preview_thread: QThread | None = None
         self._preview_worker: _PreviewWorker | None = None
 

@@ -25,7 +25,7 @@ class ApiServer:
 
     def __init__(
         self,
-        get_state: Callable[[], dict],
+        get_state: Callable[[], dict[str, Any]],
         host: str = "localhost",
         port: int = DEFAULT_PORT,
         rate_hz: float = 60.0,
@@ -34,7 +34,7 @@ class ApiServer:
         self.host = host
         self.port = port
         self.rate_hz = rate_hz
-        self._clients: set = set()
+        self._clients: set[Any] = set()
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:

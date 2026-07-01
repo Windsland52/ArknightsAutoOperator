@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -47,11 +47,11 @@ class MeasurementWorker(QObject):
         self._running = False
         self._reset_requested = False
         self._consecutive_errors = 0
-        self._latest: dict = {}
+        self._latest: dict[str, Any] = {}
         self._lock = threading.Lock()
 
     @property
-    def latest_state(self) -> dict:
+    def latest_state(self) -> dict[str, Any]:
         with self._lock:
             return dict(self._latest)
 

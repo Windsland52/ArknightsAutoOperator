@@ -18,7 +18,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from maa.controller import Win32Controller
@@ -493,7 +493,7 @@ class MainWindow(QMainWindow):
             logger.debug("计时器重置（pipeline 节点: %s）", node_name)
             self.worker.request_reset_timer()
 
-    def _on_measure_state(self, state: dict) -> None:
+    def _on_measure_state(self, state: dict[str, Any]) -> None:
         from aao.core.timing.time_source import format_timer
 
         total = state.get("totalElapsedFrames", 0)
