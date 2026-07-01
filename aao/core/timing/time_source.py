@@ -6,9 +6,13 @@
 核心机制：
 - 喂帧 ``update(frame)`` → 当前逻辑帧（周期内）。
 - 周期 wrap 检测：帧显著下降（> _WRAP_MARGIN）→ cycle_counter++、累计 cycle_base。
+- 战斗状态检测（仅用于清零规则）：InBattle → arm；BattleBegin + armed → reset_timer。
+  不 gate 费用条读取（暂停/部署/结算时 pause glyph 可能弱化，gate 会丢帧）。
+  暂停不清零（费用条仍可见）；退出战斗后费用条消失 >= 30 帧 → 标记重入清零；
+  重新 InBattle → reset（进关卡清计时器）。
 - PLL 外推：当测量帧连续不变（费用条被遮挡/走不满）时，按最近 wrap 间隔估算的周期外推帧。
 - 全局计时器 ``total_elapsed = timer_offset + cycle_base + logical_frame``。
-- 1.5s 无检测 → 重置。
+- None 时 hold 显示（不设 -1），不再用 timeout 清零。
 """
 
 from __future__ import annotations
@@ -19,12 +23,15 @@ import numpy as np
 
 from aao import config
 from aao.core.timing import tick
+from aao.core.timing.battle_state import BattleState, detect_battle_state
 from aao.core.timing.calibration import FullCalibrationData
 from aao.utils.logger import logger
 
-RESET_TIMEOUT_S = 1.5
 _WRAP_MARGIN = 3  # 帧下降超过此值 → 判定周期 wrap（过滤抖动）
 _BOUNDARY_SWITCH_FRAME = 315  # 开局第 315 逻辑帧所在周期为边界周期
+# 费用条连续不可见帧数阈值：NotInBattle + lf=None 连续 >= 此帧数
+# → 标记重入清零。部署遮挡通常 < 6 秒（180帧@30fps），退出战斗到重进更长。
+_NO_COST_BAR_RESET_FRAMES = 180
 
 
 def format_timer(total_frames: int, fps: int = config.FRAMES_PER_SECOND) -> str:
@@ -61,16 +68,14 @@ def _compute_boundary_cycle(
 class TimeSource:
     """费用条时间状态机 + PLL 外推。喂帧驱动，产出周期帧 / 全局计时器。"""
 
-    def __init__(self, calibration: FullCalibrationData, reset_timeout: float = RESET_TIMEOUT_S):
+    def __init__(self, calibration: FullCalibrationData):
         self.calibration = calibration
         self.profiles = calibration.profiles
-        self.reset_timeout = reset_timeout
 
         self.cycle_counter = 0
         self.cycle_base_frames = 0
         self.timer_offset = 0
         self.previous_frame = -1  # 显示用（可能含外推）
-        self.last_detect_time = 0.0
         self._total_frames = 0
 
         # 负费（可露希尔）状态
@@ -87,10 +92,23 @@ class TimeSource:
 
         # PLL 外推状态
         self._prev_measured = -1  # 上次测量帧（用于 wrap 检测）
+        self._prev_cost_is_negative = False  # 上次负费状态（排除负费切换的遮挡 hold）
         self._stuck_lf: int | None = None  # 卡住时的测量帧
         self._stuck_since = 0.0  # 卡住开始时间
         self._last_wrap_time = 0.0  # 上次 wrap 时间
         self._cycle_period = 0.0  # 估算的周期（秒）
+
+        # BattleBegin armed 机制（对应 Rust engine.rs:260-265）：
+        # InBattle → arm；BattleBegin + armed → reset_timer + disarm。
+        # 避免在非战斗界面误清零，只在"刚打完一局 → 进入下一局标题屏"时触发。
+        self._battle_begin_reset_armed = False
+
+        # 费用条消失计数器 + 重入清零标志：
+        # NotInBattle 且 lf=None（费用条不可见）连续 >= _NO_COST_BAR_RESET_FRAMES 帧
+        # → 标记 _needs_reentry_reset。下次 InBattle → reset（进关卡清计时器）。
+        # 暂停时费用条仍可见（lf != None）→ 不计数 → 不清零。
+        self._no_cost_bar_frames = 0
+        self._needs_reentry_reset = False
 
     @property
     def num_profiles(self) -> int:
@@ -102,6 +120,34 @@ class TimeSource:
 
     def update(self, frame: np.ndarray) -> int | None:
         """喂一帧，更新状态。返回当前周期内逻辑帧（含 PLL 外推，None = 未检出）。"""
+        now = time.time()
+
+        # --- 战斗状态检测（仅用于清零规则，不 gate 费用条读取）---
+        # 对应 Rust engine.rs:253-265。
+        # InBattle → arm；
+        # NotInBattle（暂停/部署/结算）→ 仍读费用条，不清零。
+        #   暂停时费用条仍可见 → 不清零。
+        #   退出战斗后费用条消失（lf=None 连续 >= _NO_COST_BAR_RESET_FRAMES 帧）→ 标记清零。
+        #   重新 InBattle 时如果标记了清零 → reset（进关卡清计时器）。
+        battle_state = detect_battle_state(frame)
+        if battle_state.is_in_battle:
+            if self._needs_reentry_reset:
+                logger.debug("time_source: 重新进入战斗，重置计时器")
+                self._reset_state()
+                self._needs_reentry_reset = False
+                self._battle_begin_reset_armed = True
+                # reset 后继续读费用条（首帧 lf 作为新起点）
+            else:
+                self._battle_begin_reset_armed = True
+            self._no_cost_bar_frames = 0
+        elif battle_state is BattleState.BATTLE_BEGIN and self._battle_begin_reset_armed:
+            logger.debug("time_source: BattleBegin 标题屏 + armed → 重置计时器")
+            self._reset_state()
+            self._battle_begin_reset_armed = False
+            self._needs_reentry_reset = False
+            self._no_cost_bar_frames = 0
+            return None
+
         roi = tick.find_cost_bar_roi(frame.shape[1], frame.shape[0])
         profile = self.active_profile
         total_this = profile.total_frames
@@ -126,7 +172,6 @@ class TimeSource:
                 lf_measured = None
         else:
             lf_measured = tick.get_logical_frame(frame, roi, profile.pixel_map)
-        now = time.time()
 
         # 边界后周期去掉 hidden 帧：校准在慢速下检测到的隐藏辉光帧（如 frame 1
         # 无独立宽度）在边界后左开右闭周期里不存在，需从帧序列中跳过。
@@ -158,16 +203,48 @@ class TimeSource:
                     lf_measured = total_this - 1  # 之后周期：满条 → frame 29
 
         if lf_measured is None:
-            self.previous_frame = -1
-            # 不重置 _prev_measured：保留上次有效值，以便 wrap 瞬间的短暂 None 后仍能检测周期
+            # 费用条被遮挡或不可见 → hold 显示。
+            # 同时累计费用条消失帧数：连续不可见 >= 阈值 → 标记重入清零。
+            # 但只在 NotInBattle 时计数：InBattle 时 None 是遮挡（部署框），
+            # 不是费用条消失，不应触发清零。
             self._stuck_lf = None
-            if self.last_detect_time and now - self.last_detect_time > self.reset_timeout:
-                if self.cycle_counter or self.cycle_base_frames or self.timer_offset:
-                    logger.debug("time_source: %ss 无检测，重置", self.reset_timeout)
-                    self._reset_state()
-            return None
+            if self._battle_begin_reset_armed and not battle_state.is_in_battle:
+                self._no_cost_bar_frames += 1
+                if (
+                    self._no_cost_bar_frames >= _NO_COST_BAR_RESET_FRAMES
+                    and not self._needs_reentry_reset
+                ):
+                    self._needs_reentry_reset = True
+                    logger.debug(
+                        "time_source: 费用条连续 %d 帧不可见，标记重入清零",
+                        self._no_cost_bar_frames,
+                    )
+            return self.previous_frame if self.previous_frame >= 0 else None
 
-        # --- wrap 检测（基于测量帧）---
+        # 费用条可见 → 重置消失计数
+        self._no_cost_bar_frames = 0
+
+        # --- 遮挡 hold ---
+        # 两种遮挡模式：
+        # A. lf 回退到中间值（pw=偏小非0）→ hold
+        # B. lf 回退到 0~2 但 prev 不在满条附近（pw=0，遮挡物是灰色）→ hold
+        # 正常 wrap：lf 从满条（>= eff_total - _WRAP_MARGIN）回到 0~2 → 不 hold
+        # 负费切换：eff_total 60↔30 导致 lf 跳变 → 不 hold（neg_changed）
+        neg_changed = self._cost_is_negative != self._prev_cost_is_negative
+        prev_high = self._prev_measured >= effective_total - _WRAP_MARGIN
+        if (
+            not neg_changed
+            and self._prev_measured >= 0
+            and lf_measured < self._prev_measured - _WRAP_MARGIN
+            and (lf_measured >= _WRAP_MARGIN or not prev_high)
+        ):
+            return self.previous_frame if self.previous_frame >= 0 else None
+
+        # --- wrap 检测（整数帧差）---
+        # 旧逻辑：lf 显著下降（> _WRAP_MARGIN）→ 周期 wrap。
+        # 曾尝试改用相位（prev>0.75 && cur<0.25），但负费切换时
+        # total_frames_in_cycle 从 60 变 30 导致相位不连续，误判。
+        # 保持整数帧差，与原始行为一致。
         wrapped = False
         if self._prev_measured >= 0 and lf_measured < self._prev_measured - _WRAP_MARGIN:
             # 更新周期估算
@@ -205,8 +282,8 @@ class TimeSource:
             lf = lf_measured
 
         self._prev_measured = lf_measured
+        self._prev_cost_is_negative = self._cost_is_negative
         self.previous_frame = lf
-        self.last_detect_time = now
         self._total_frames = self.timer_offset + self.cycle_base_frames + lf
         return lf
 
@@ -230,11 +307,15 @@ class TimeSource:
         self._total_frames = 0
         self.previous_frame = -1
         self._prev_measured = -1
+        self._prev_cost_is_negative = False
         self._stuck_lf = None
         self._stuck_since = 0.0
         self._last_wrap_time = 0.0
         self._cycle_period = 0.0
         self._cost_is_negative = False
+        self._no_cost_bar_frames = 0
+        self._needs_reentry_reset = False
+        # 不清 _battle_begin_reset_armed：由 BattleBegin 转移逻辑控制
 
     # --- 查询 ---
 
