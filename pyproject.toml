@@ -36,8 +36,8 @@ line-length = 100
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.pyright]
-include = ["custom", "aao"]
-extraPaths = ["custom", "aao"]
+include = ["custom", "aao", "tests", "tools"]
+extraPaths = ["custom", "aao", "tests", "tests/replay"]
 pythonVersion = "3.13"
 typeCheckingMode = "strict"
 
@@ -51,6 +51,18 @@ reportUnknownVariableType = "none"
 reportUnknownParameterType = "none"
 reportUnknownLambdaType = "none"
 reportMissingTypeArgument = "none"
+
+# tests: 访问 protected 成员 + 解构未使用变量是测试常见模式
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+reportPrivateUsage = "none"
+reportUnusedVariable = "none"
+
+# tools: 工具脚本允许访问 protected 成员 + 解构未使用变量
+[[tool.pyright.executionEnvironments]]
+root = "tools"
+reportPrivateUsage = "none"
+reportUnusedVariable = "none"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
