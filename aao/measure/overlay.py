@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import (
     QColor,
@@ -131,7 +133,7 @@ class OverlayWindow(QWidget):
         self.move(x, y)
         self._save_window_state()
 
-    def on_state(self, state: dict) -> None:
+    def on_state(self, state: dict[str, Any]) -> None:
         running = state.get("isRunning", False)
         cf = state.get("currentFrame")
         total = state.get("totalFramesInCycle", 0)

@@ -10,6 +10,7 @@ side view（侧面，多一个 Y 轴旋转）：用于部署拖拽落点。
 from __future__ import annotations
 
 import math
+from typing import Any
 
 import numpy as np
 
@@ -69,7 +70,7 @@ def _build_matrix(view_offset: list[float], side: bool) -> np.ndarray:
 
 
 def transform_map_to_view(
-    level_data: dict,
+    level_data: dict[str, Any],
     side: bool = False,
 ) -> list[list[tuple[float, float]]]:
     """把关卡数据投影为屏幕坐标（0-1 比例）。

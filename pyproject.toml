@@ -41,16 +41,16 @@ extraPaths = ["custom", "aao", "tests", "tests/replay"]
 pythonVersion = "3.13"
 typeCheckingMode = "strict"
 
-# strict 下关闭因 maafw 第三方库存根缺失导致的类型未知噪音
-# （reportMissingTypeStubs / reportUnknown* / reportMissingTypeArgument），
-# 保留 strict 的其余实质检查（privateUsage / unnecessaryComparison / unusedFunction 等）。
+# MaaFramework 的 Python 包名是 MaaFw，导入名是 `maa`；当前不发布 PEP 561 类型信息。
 reportMissingTypeStubs = "none"
+
+# 项目大量动态边界来自 MaaFramework 回调、Qt Signal 和 JSON 配置。
+# 保留 strict 的实质检查，但不为了消除 Unknown 传播而强行包一层项目内类型。
 reportUnknownMemberType = "none"
 reportUnknownArgumentType = "none"
 reportUnknownVariableType = "none"
 reportUnknownParameterType = "none"
 reportUnknownLambdaType = "none"
-reportMissingTypeArgument = "none"
 
 # tests: 访问 protected 成员 + 解构未使用变量是测试常见模式
 [[tool.pyright.executionEnvironments]]
@@ -67,4 +67,3 @@ reportUnusedVariable = "none"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-

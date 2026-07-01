@@ -25,6 +25,7 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from aao import __version__
 from aao.resources import syncer
@@ -209,13 +210,13 @@ class UpdateChecker:
                 progress_cb(r.message)
         return results
 
-    def update_all(self, progress_cb: Callable[[str], None] | None = None) -> dict:
+    def update_all(self, progress_cb: Callable[[str], None] | None = None) -> dict[str, Any]:
         """检查软件更新 + 更新资源。
 
         Returns:
             {"software": ReleaseInfo | None, "resources": [SyncResult]}
         """
-        result: dict = {}
+        result: dict[str, Any] = {}
 
         if progress_cb:
             progress_cb("检查软件更新...")
@@ -417,7 +418,7 @@ _DOWNLOAD_RETRIES = 3
 _DOWNLOAD_BACKOFF_SEC = 1.0
 
 
-def _pick_win_asset(assets: list) -> AssetInfo | None:
+def _pick_win_asset(assets: list[dict[str, Any]]) -> AssetInfo | None:
     """从 release assets 里选 win-x64 zip。"""
     for a in assets:
         name = str(a.get("name", "")).lower()

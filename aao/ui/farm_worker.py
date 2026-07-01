@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QObject, Signal
 
@@ -114,7 +114,7 @@ class FarmWorker(QObject):
         tl_param = json.dumps({"timeline_path": self._timeline_path}, ensure_ascii=False)
         pipeline["Farm@ClickStage"]["custom_recognition_param"] = tl_param
 
-        exec_param: dict = {"timeline_path": self._timeline_path}
+        exec_param: dict[str, Any] = {"timeline_path": self._timeline_path}
         if self._profile:
             exec_param["calibration"] = self._profile
         pipeline["Farm@Execute"]["custom_action_param"] = json.dumps(exec_param, ensure_ascii=False)

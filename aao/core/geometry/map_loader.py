@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from aao.utils.logger import logger
 from aao.utils.runtime_paths import project_root
@@ -52,7 +53,7 @@ def find_map_file(code: str) -> Path | None:
     return None
 
 
-def load_map(code: str) -> dict | None:
+def load_map(code: str) -> dict[str, Any] | None:
     """加载关卡数据。code 如 '1-7'。"""
     path = find_map_file(code)
     if path is None:

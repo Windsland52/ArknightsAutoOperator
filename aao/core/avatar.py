@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -71,7 +71,7 @@ def _normalize_name(name: str) -> str:
 def detect_slots(
     context: Context,
     image: np.ndarray,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """用 pipeline 节点 DetectSlots 检测待部署区所有干员槽位。"""
     reco_detail = context.run_recognition("DetectSlots", image)
 
@@ -217,7 +217,7 @@ def _ocr_oper_name(context: Context, detail_img: np.ndarray) -> str | None:
 
 def _save_avatar_from_image(
     image: np.ndarray,
-    slot: dict,
+    slot: dict[str, Any],
     oper_name: str,
 ) -> bool:
     """从截图截取槽位头像并存盘。"""
